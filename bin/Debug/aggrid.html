@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <script src="ag-grid-community.min.js"></script>
+  <link rel="stylesheet" href="ag-grid.css">
+  <style>html,body,#myGrid{height:100%;margin:0;padding:10px;}</style>
+</head>
+<body>
+  <div id="myGrid" class="ag-theme-alpine"></div>
+
+  <script>
+    // グローバル変数
+    let gridOptions = null;
+    let gridInstance = null;
+
+    // エラーハンドリング
+    window.onerror = function(msg, url, line, col, error) {
+      window.chrome.webview.postMessage({
+        type: 'jsError',
+        message: msg,
+        url: url,
+        line: line,
+        col: col,
+        error: error ? error.toString() : 'unknown'
+      });
+      return false;
+    };
+
+    // --- JS → C# (編集通知) ------------------------------
+    function notifyHost(){
+      if (gridInstance && gridInstance.api) {
+        const rows = [];
+        gridInstance.api.forEachNode(n => rows.push(n.data));
+        window.chrome.webview.postMessage({ type:'dataChanged', payload:rows });
+      }
+    }
+
+    try {
+      console.log('AG-Grid存在確認:', typeof agGrid);
+      
+      if (typeof agGrid === 'undefined') {
+        throw new Error('AG-Grid が読み込まれていません');
+      }
+
+      // --- 列定義（セル結合あり） --------------------------
+      const columnDefs = [
+        { headerName:'商品', field:'product', editable:true,
+          colSpan: params => params.data.isHeader ? 2 : 1 },
+        { headerName:'数量', field:'qty', editable:true },
+        { headerName:'価格', field:'price', editable:true }
+      ];
+
+      // --- グリッド初期化 ----------------------------------
+      gridOptions = {
+        columnDefs,
+        rowData: [],
+        defaultColDef: { resizable:true },
+        onCellValueChanged: notifyHost
+      };
+      
+      console.log('AG-Grid初期化開始');
+      gridInstance = new agGrid.Grid(document.getElementById('myGrid'), gridOptions);
+      console.log('AG-Grid初期化完了');
+      
+    } catch (error) {
+      console.error('初期化エラー:', error);
+      document.getElementById('myGrid').innerHTML = 
+        '<div style="padding:20px;color:red;"><h3>エラー発生</h3><p>' + error.message + '</p></div>';
+      
+      window.chrome.webview.postMessage({
+        type: 'jsError',
+        message: error.message
+      });
+    }
+
+    // --- C# → JS (データ受信) ----------------------------
+    window.chrome.webview.addEventListener('message', e => {
+      if(e.data?.type === 'setData' && gridInstance && gridInstance.api){
+        gridInstance.api.setRowData(e.data.payload);
+      }
+    });
+  </script>
+</body>
+</html>
