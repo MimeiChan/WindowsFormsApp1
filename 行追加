@@ -1,0 +1,183 @@
+AG-GridでWindowsフォームのような編集可能グリッドを実現し、末尾に空行を追加する方法について調査して提案させていただきます。AG-GridでWindowsフォームのような編集可能グリッドに空行を追加する方法について調査しました。標準機能では直接サポートされていませんが、いくつかの実装パターンを提案させていただきます。
+
+## 1. **Transaction APIを使用した動的追加方式**
+
+最もシンプルな方法は、`gridApi.applyTransaction({add: [{}]})` を使用して空のオブジェクトを追加する方法です。
+
+```javascript
+// ボタンクリックなどのイベントで空行を追加
+function addEmptyRow() {
+    const emptyRow = {
+        // 各カラムに対して空の値を設定
+        id: '',
+        name: '',
+        value: '',
+        // 新規行を識別するためのフラグ
+        isNewRow: true
+    };
+    
+    // 末尾に追加
+    gridApi.applyTransaction({ 
+        add: [emptyRow]
+    });
+    
+    // 特定の位置に追加（v24.1以降で再サポート）
+    // gridApi.applyTransaction({ 
+    //     add: [emptyRow],
+    //     addIndex: gridApi.getDisplayedRowCount()
+    // });
+}
+```
+
+## 2. **ピンされた行（Pinned Row）を使用した方式**
+
+グリッドの上部または下部に固定された入力用の行を配置し、入力完了後にデータとして追加する方法です。
+
+```javascript
+// React例
+const [pinnedBottomRowData, setPinnedBottomRowData] = useState([{}]);
+
+const onCellEditingStopped = (params) => {
+    if (params.rowPinned === 'bottom') {
+        // すべての必須フィールドが入力されているかチェック
+        if (isRowComplete(params.data)) {
+            // 実際のデータとして追加
+            gridApi.applyTransaction({ add: [params.data] });
+            // ピンされた行をリセット
+            setPinnedBottomRowData([{}]);
+            gridApi.setGridOption('pinnedBottomRowData', [{}]);
+        }
+    }
+};
+
+// Grid設定
+<AgGridReact
+    pinnedBottomRowData={pinnedBottomRowData}
+    onCellEditingStopped={onCellEditingStopped}
+    // その他の設定...
+/>
+```
+
+## 3. **ソート対応の空行追加方式**
+
+ソートが有効な場合でも末尾に空行を維持するには、PostSort機能やカスタムソートを使用します。
+
+```javascript
+// 新規行識別用のフィールド
+const NEW_ROW_IDENTIFIER = '_isNewRow';
+
+// 空行作成
+function createEmptyRow(columnDefs) {
+    const rowData = {};
+    columnDefs.forEach(colDef => {
+        if (colDef.field) {
+            rowData[colDef.field] = '';
+        }
+    });
+    rowData[NEW_ROW_IDENTIFIER] = true;
+    return rowData;
+}
+
+// PostSortコールバック
+const postSort = (rowNodes) => {
+    const newRowIndex = rowNodes.findIndex(
+        node => node.data[NEW_ROW_IDENTIFIER]
+    );
+    
+    if (newRowIndex !== -1) {
+        // 新規行を末尾に移動
+        const newRow = rowNodes.splice(newRowIndex, 1)[0];
+        rowNodes.push(newRow);
+    }
+};
+
+// Grid設定
+const gridOptions = {
+    postSort: postSort,
+    // その他の設定...
+};
+```
+
+## 4. **常に表示される仮想空行方式**
+
+```javascript
+// rowDataに常に空行を含める
+function maintainEmptyRows(rowData, emptyRowCount = 1) {
+    // 既存の空行を削除
+    const filteredData = rowData.filter(row => !isEmptyRow(row));
+    
+    // 末尾に指定数の空行を追加
+    const emptyRows = [];
+    for (let i = 0; i < emptyRowCount; i++) {
+        emptyRows.push(createEmptyRow());
+    }
+    
+    return [...filteredData, ...emptyRows];
+}
+
+// 編集完了時の処理
+const onCellValueChanged = (params) => {
+    if (isEmptyRow(params.data) && !isEmptyRow(params.data, true)) {
+        // 空行が編集されたら、新しい空行を追加
+        const newRowData = maintainEmptyRows(gridApi.getModel().rowsToDisplay);
+        gridApi.setRowData(newRowData);
+    }
+};
+```
+
+## 5. **カスタムフッター行方式**
+
+```javascript
+// カスタムステータスバーコンポーネント
+class AddRowStatusBar {
+    init(params) {
+        this.params = params;
+        this.eGui = document.createElement('div');
+        this.eGui.innerHTML = `
+            <button class="add-row-btn">+ 新しい行を追加</button>
+        `;
+        
+        this.eGui.querySelector('.add-row-btn').addEventListener('click', () => {
+            this.addNewRow();
+        });
+    }
+
+    addNewRow() {
+        const emptyRow = createEmptyRow(this.params.columnApi.getAllColumns());
+        this.params.api.applyTransaction({ add: [emptyRow] });
+        
+        // 追加した行にフォーカス
+        const lastRowIndex = this.params.api.getDisplayedRowCount() - 1;
+        this.params.api.ensureIndexVisible(lastRowIndex);
+        this.params.api.setFocusedCell(lastRowIndex, 
+            this.params.columnApi.getAllDisplayedColumns()[0]);
+    }
+
+    getGui() {
+        return this.eGui;
+    }
+}
+
+// Grid設定
+const gridOptions = {
+    statusBar: {
+        statusPanels: [
+            {
+                statusPanel: AddRowStatusBar,
+                align: 'right'
+            }
+        ]
+    }
+};
+```
+
+## 推奨アプローチ
+
+用途に応じて以下を推奨します：
+
+1. **シンプルな実装**: Transaction APIを使用（方式1）
+2. **Excelライクな操作性**: ピンされた行を使用（方式2）
+3. **常に空行を表示**: 仮想空行方式（方式4）
+4. **ソート対応が必要**: PostSort機能を使用（方式3）
+
+各方式にはメリット・デメリットがありますので、要件に応じて選択してください。また、編集可能にする場合は、適切な`editable: true`の設定とセルエディターの構成も必要です。
