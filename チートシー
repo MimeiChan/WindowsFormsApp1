@@ -1,0 +1,641 @@
+# DataGridView → AG-Grid 移行チートシート
+
+## 基本的なデータ操作
+
+### データバインディング
+
+**DataGridView (C#)**
+```csharp
+// DataTableをバインド
+dataGridView1.DataSource = dataTable;
+
+// Listをバインド
+dataGridView1.DataSource = myList;
+
+// BindingSourceを使用
+BindingSource bs = new BindingSource();
+bs.DataSource = myList;
+dataGridView1.DataSource = bs;
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 配列データをセット
+gridApi.setRowData(rowData);
+
+// 非同期データの取得と設定
+fetch('/api/data')
+    .then(response => response.json())
+    .then(data => gridApi.setRowData(data));
+
+// WebView2経由でC#からデータを受信
+window.chrome.webview.addEventListener('message', event => {
+    if (event.data.type === 'loadData') {
+        gridApi.setRowData(event.data.rows);
+    }
+});
+```
+
+### 行の追加・削除
+
+**DataGridView (C#)**
+```csharp
+// 行追加
+dataGridView1.Rows.Add("値1", "値2", "値3");
+
+// 特定位置に挿入
+dataGridView1.Rows.Insert(2, "値1", "値2");
+
+// 行削除
+dataGridView1.Rows.RemoveAt(rowIndex);
+
+// 選択行の削除
+foreach (DataGridViewRow row in dataGridView1.SelectedRows) {
+    dataGridView1.Rows.Remove(row);
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 行追加（末尾）
+gridApi.applyTransaction({ 
+    add: [{ col1: '値1', col2: '値2' }] 
+});
+
+// 特定位置に挿入（v24.1以降）
+gridApi.applyTransaction({ 
+    add: [{ col1: '値1', col2: '値2' }],
+    addIndex: 2 
+});
+
+// 行削除
+const selectedRows = gridApi.getSelectedRows();
+gridApi.applyTransaction({ remove: selectedRows });
+
+// インデックスで削除
+const rowNode = gridApi.getRowNode(rowId);
+gridApi.applyTransaction({ remove: [rowNode.data] });
+```
+
+## セル・列の操作
+
+### セル編集
+
+**DataGridView (C#)**
+```csharp
+// セルの編集可否
+dataGridView1.ReadOnly = false;
+dataGridView1.Columns["列名"].ReadOnly = true;
+
+// セル値の取得・設定
+string value = dataGridView1[col, row].Value.ToString();
+dataGridView1[col, row].Value = "新しい値";
+
+// 編集イベント
+private void dataGridView1_CellEndEdit(object sender, DataGridViewCellEventArgs e) {
+    // 編集完了後の処理
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 列定義で編集可否を設定
+columnDefs: [
+    { field: 'name', editable: true },
+    { field: 'id', editable: false },
+    { 
+        field: 'price', 
+        editable: (params) => params.data.status === 'active' // 条件付き
+    }
+]
+
+// セル値の取得・設定
+const rowNode = gridApi.getRowNode(rowId);
+const value = rowNode.data.columnName;
+rowNode.setDataValue('columnName', '新しい値');
+
+// 編集イベント
+onCellEditingStopped: (params) => {
+    console.log('編集完了:', params.column.colId, params.value);
+}
+```
+
+### カスタムエディター
+
+**DataGridView (C#)**
+```csharp
+// コンボボックス列
+DataGridViewComboBoxColumn comboColumn = new DataGridViewComboBoxColumn();
+comboColumn.Items.AddRange("選択肢1", "選択肢2", "選択肢3");
+dataGridView1.Columns.Add(comboColumn);
+
+// 日付選択列
+DataGridViewColumn dateColumn = new DataGridViewColumn();
+dateColumn.CellTemplate = new CalendarCell();
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// セレクトエディター
+{
+    field: 'category',
+    cellEditor: 'agSelectCellEditor',
+    cellEditorParams: {
+        values: ['選択肢1', '選択肢2', '選択肢3']
+    }
+}
+
+// 日付エディター
+{
+    field: 'date',
+    cellEditor: 'agDateCellEditor',
+    cellEditorParams: {
+        min: '2020-01-01',
+        max: '2025-12-31'
+    }
+}
+
+// カスタムエディター
+{
+    field: 'custom',
+    cellEditor: CustomEditorComponent
+}
+```
+
+## 選択・ソート・フィルター
+
+### 選択モード
+
+**DataGridView (C#)**
+```csharp
+// 選択モード設定
+dataGridView1.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+dataGridView1.MultiSelect = true;
+
+// 選択行の取得
+foreach (DataGridViewRow row in dataGridView1.SelectedRows) {
+    var data = row.Cells["列名"].Value;
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// Grid設定
+gridOptions: {
+    rowSelection: 'multiple', // 'single' or 'multiple'
+    rowMultiSelectWithClick: true,
+    
+    // チェックボックス列
+    columnDefs: [{
+        headerCheckboxSelection: true,
+        checkboxSelection: true,
+        width: 50
+    }]
+}
+
+// 選択行の取得
+const selectedRows = gridApi.getSelectedRows();
+const selectedNodes = gridApi.getSelectedNodes();
+```
+
+### ソート
+
+**DataGridView (C#)**
+```csharp
+// プログラムによるソート
+dataGridView1.Sort(dataGridView1.Columns["列名"], ListSortDirection.Ascending);
+
+// ソート無効化
+dataGridView1.Columns["列名"].SortMode = DataGridViewColumnSortMode.NotSortable;
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 列定義でソート設定
+{
+    field: 'name',
+    sortable: true,
+    sort: 'asc' // 初期ソート
+}
+
+// プログラムによるソート
+gridApi.applyColumnState({
+    state: [{ colId: 'name', sort: 'asc' }]
+});
+
+// カスタムソート
+{
+    field: 'priority',
+    comparator: (valueA, valueB) => {
+        const order = ['High', 'Medium', 'Low'];
+        return order.indexOf(valueA) - order.indexOf(valueB);
+    }
+}
+```
+
+### フィルター
+
+**DataGridView (C#)**
+```csharp
+// BindingSourceでフィルター
+BindingSource bs = new BindingSource();
+bs.DataSource = dataTable;
+bs.Filter = "Age >= 18 AND Status = 'Active'";
+dataGridView1.DataSource = bs;
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 列フィルター設定
+{
+    field: 'age',
+    filter: 'agNumberColumnFilter',
+    filterParams: {
+        buttons: ['reset', 'apply'],
+        closeOnApply: true
+    }
+}
+
+// プログラムによるフィルター
+gridApi.setFilterModel({
+    age: { type: 'greaterThan', filter: 18 },
+    status: { type: 'equals', filter: 'Active' }
+});
+
+// クイックフィルター
+gridApi.setQuickFilter('検索文字列');
+```
+
+## 外観・スタイリング
+
+### セルスタイル
+
+**DataGridView (C#)**
+```csharp
+// セルスタイル
+dataGridView1.Rows[0].Cells[0].Style.BackColor = Color.Yellow;
+dataGridView1.Rows[0].Cells[0].Style.Font = new Font("Arial", 12, FontStyle.Bold);
+
+// 条件付き書式
+private void dataGridView1_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e) {
+    if (e.ColumnIndex == 0 && e.Value != null) {
+        if (Convert.ToInt32(e.Value) < 0) {
+            e.CellStyle.ForeColor = Color.Red;
+        }
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// セルスタイル
+{
+    field: 'amount',
+    cellStyle: (params) => {
+        if (params.value < 0) {
+            return { color: 'red', fontWeight: 'bold' };
+        }
+        return null;
+    },
+    cellClass: (params) => {
+        return params.value < 0 ? 'negative-value' : '';
+    }
+}
+
+// 行スタイル
+getRowStyle: (params) => {
+    if (params.data.status === 'inactive') {
+        return { opacity: 0.5 };
+    }
+}
+```
+
+### カスタムレンダリング
+
+**DataGridView (C#)**
+```csharp
+// カスタム描画
+private void dataGridView1_CellPainting(object sender, DataGridViewCellPaintingEventArgs e) {
+    if (e.ColumnIndex == 0 && e.RowIndex >= 0) {
+        e.Paint(e.CellBounds, DataGridViewPaintParts.All);
+        // カスタム描画コード
+        e.Handled = true;
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// セルレンダラー
+{
+    field: 'status',
+    cellRenderer: (params) => {
+        const icon = params.value === 'active' ? '✓' : '✗';
+        return `<span class="status-icon">${icon} ${params.value}</span>`;
+    }
+}
+
+// コンポーネントレンダラー
+{
+    field: 'actions',
+    cellRenderer: ActionButtonsComponent,
+    cellRendererParams: {
+        clicked: (field) => console.log(field)
+    }
+}
+```
+
+## イベント処理
+
+### よく使うイベント
+
+**DataGridView (C#)**
+```csharp
+// クリックイベント
+private void dataGridView1_CellClick(object sender, DataGridViewCellEventArgs e) {
+    if (e.RowIndex >= 0) {
+        var cellValue = dataGridView1.Rows[e.RowIndex].Cells[e.ColumnIndex].Value;
+    }
+}
+
+// ダブルクリック
+private void dataGridView1_CellDoubleClick(object sender, DataGridViewCellEventArgs e) {
+    // 詳細画面を開くなど
+}
+
+// 右クリック
+private void dataGridView1_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e) {
+    if (e.Button == MouseButtons.Right) {
+        contextMenuStrip1.Show(Cursor.Position);
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// グリッドイベント
+gridOptions: {
+    onCellClicked: (params) => {
+        console.log('クリック:', params.data, params.colDef.field);
+    },
+    
+    onCellDoubleClicked: (params) => {
+        // 詳細モーダルを開くなど
+        openDetailModal(params.data);
+    },
+    
+    onCellContextMenu: (params) => {
+        params.event.preventDefault();
+        showContextMenu(params);
+    },
+    
+    onRowSelected: (params) => {
+        console.log('行選択:', params.node.selected);
+    }
+}
+```
+
+## 高度な機能
+
+### バリデーション
+
+**DataGridView (C#)**
+```csharp
+private void dataGridView1_CellValidating(object sender, DataGridViewCellValidatingEventArgs e) {
+    if (dataGridView1.Columns[e.ColumnIndex].Name == "Email") {
+        if (!IsValidEmail(e.FormattedValue.ToString())) {
+            e.Cancel = true;
+            dataGridView1.Rows[e.RowIndex].ErrorText = "無効なメールアドレス";
+        }
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 値パーサーでバリデーション
+{
+    field: 'email',
+    valueSetter: (params) => {
+        if (!isValidEmail(params.newValue)) {
+            // エラー表示
+            showError('無効なメールアドレス');
+            return false; // 値の更新を拒否
+        }
+        params.data.email = params.newValue;
+        return true;
+    }
+}
+
+// セルエディターでバリデーション
+onCellValueChanged: (params) => {
+    if (params.column.colId === 'quantity' && params.newValue < 0) {
+        // 元の値に戻す
+        params.node.setDataValue('quantity', params.oldValue);
+        showError('数量は0以上である必要があります');
+    }
+}
+```
+
+### グループ化・集計
+
+**DataGridView (C#)**
+```csharp
+// 手動でグループ化（カスタム実装が必要）
+var groupedData = data.GroupBy(x => x.Category)
+                      .Select(g => new { Category = g.Key, Count = g.Count() });
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 行グループ化
+gridOptions: {
+    autoGroupColumnDef: {
+        headerName: 'グループ',
+        minWidth: 200
+    },
+    groupDefaultExpanded: 1,
+    
+    columnDefs: [
+        { field: 'category', rowGroup: true, hide: true },
+        { 
+            field: 'amount', 
+            aggFunc: 'sum',
+            cellRenderer: 'agAnimateShowChangeCellRenderer'
+        }
+    ]
+}
+
+// カスタム集計
+{
+    field: 'customAgg',
+    aggFunc: (params) => {
+        let sum = 0;
+        params.values.forEach(value => sum += value);
+        return sum / params.values.length; // 平均
+    }
+}
+```
+
+### エクスポート
+
+**DataGridView (C#)**
+```csharp
+// CSV出力（手動実装）
+StringBuilder csv = new StringBuilder();
+foreach (DataGridViewColumn column in dataGridView1.Columns) {
+    csv.Append(column.HeaderText + ",");
+}
+csv.AppendLine();
+
+foreach (DataGridViewRow row in dataGridView1.Rows) {
+    foreach (DataGridViewCell cell in row.Cells) {
+        csv.Append(cell.Value + ",");
+    }
+    csv.AppendLine();
+}
+File.WriteAllText("export.csv", csv.ToString());
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// CSV エクスポート
+function exportToCsv() {
+    gridApi.exportDataAsCsv({
+        fileName: 'export.csv',
+        columnSeparator: ',',
+        skipColumnHeaders: false
+    });
+}
+
+// Excel エクスポート（Enterprise版）
+function exportToExcel() {
+    gridApi.exportDataAsExcel({
+        fileName: 'export.xlsx',
+        sheetName: 'データ',
+        author: 'AG-Grid Export'
+    });
+}
+
+// WebView2経由でC#にデータ送信
+function sendDataToCSharp() {
+    const data = [];
+    gridApi.forEachNode(node => data.push(node.data));
+    
+    window.chrome.webview.postMessage({
+        type: 'exportData',
+        data: data
+    });
+}
+```
+
+### 仮想スクロール・大量データ
+
+**DataGridView (C#)**
+```csharp
+// 仮想モード
+dataGridView1.VirtualMode = true;
+dataGridView1.RowCount = 1000000;
+
+private void dataGridView1_CellValueNeeded(object sender, DataGridViewCellValueEventArgs e) {
+    // 必要な時にデータを提供
+    e.Value = GetDataFromCache(e.RowIndex, e.ColumnIndex);
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// クライアントサイド（デフォルトで仮想スクロール）
+gridOptions: {
+    rowBuffer: 10,
+    rowData: largeDataArray, // 100万行でも高速
+    suppressRowTransform: true // パフォーマンス向上
+}
+
+// サーバーサイド無限スクロール
+gridOptions: {
+    rowModelType: 'infinite',
+    cacheBlockSize: 100,
+    datasource: {
+        getRows: (params) => {
+            fetch(`/api/data?start=${params.startRow}&end=${params.endRow}`)
+                .then(response => response.json())
+                .then(data => params.successCallback(data.rows, data.totalCount));
+        }
+    }
+}
+```
+
+## WebView2連携のベストプラクティス
+
+### 双方向データ同期
+
+```javascript
+// JavaScript側 - 変更通知
+let isUpdatingFromCSharp = false;
+
+gridOptions: {
+    onCellValueChanged: (params) => {
+        if (!isUpdatingFromCSharp) {
+            window.chrome.webview.postMessage({
+                type: 'cellChanged',
+                rowId: params.node.id,
+                field: params.column.colId,
+                oldValue: params.oldValue,
+                newValue: params.newValue
+            });
+        }
+    }
+}
+
+// C#からの更新を受信
+window.chrome.webview.addEventListener('message', event => {
+    if (event.data.type === 'updateCell') {
+        isUpdatingFromCSharp = true;
+        const rowNode = gridApi.getRowNode(event.data.rowId);
+        rowNode.setDataValue(event.data.field, event.data.value);
+        isUpdatingFromCSharp = false;
+    }
+});
+```
+
+```csharp
+// C#側 - 変更の送受信
+private async void UpdateCell(string rowId, string field, object value)
+{
+    var message = new {
+        type = "updateCell",
+        rowId = rowId,
+        field = field,
+        value = value
+    };
+    
+    await webView.ExecuteScriptAsync(
+        $"window.chrome.webview.postMessage({JsonConvert.SerializeObject(message)})"
+    );
+}
+```
+
+### パフォーマンスTips
+
+```javascript
+// 1. 大量更新時のレンダリング抑制
+gridApi.setDomLayout('normal'); // 一時的に通常モードに
+gridApi.applyTransactionAsync({ add: largeBatchData }, () => {
+    gridApi.setDomLayout('autoHeight'); // 完了後に戻す
+});
+
+// 2. 不要な再描画を防ぐ
+gridOptions: {
+    animateRows: false, // 大量データでは無効化
+    suppressCellSelection: true, // セル選択が不要なら無効化
+    suppressRowHoverHighlight: true // ホバー効果が不要なら無効化
+}
+
+// 3. カラム仮想化
+gridOptions: {
+    suppressColumnVirtualisation: false // 多くの列がある場合は有効に
+}
+```
+
+このチートシートで、DataGridViewからAG-Gridへの移行がスムーズに行えるはずです。AG-Gridの方が機能が豊富で、特に大量データの処理やカスタマイズ性において優れています。
