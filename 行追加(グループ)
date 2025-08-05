@@ -1,0 +1,215 @@
+はい、理解しました！1回のボタンクリックで、最初のセルが結合された2行セットを追加したいということですね。
+
+AG-Gridでは`rowSpan`機能を使ってセル結合を実現できます。以下、方式1と方式2それぞれでの実装方法を提案します。
+
+## 方式1: Transaction APIでの実装
+
+```javascript
+// 結合セルのカウンター
+let groupCounter = 1;
+
+// カラム定義
+const columnDefs = [
+    {
+        field: 'group',
+        headerName: 'グループ',
+        // rowSpan関数で結合を制御
+        rowSpan: (params) => {
+            // 各グループの最初の行でのみ2を返す
+            const rowIndex = params.node.rowIndex;
+            const allRows = params.api.getModel().rowsToDisplay;
+            
+            // 現在の行が同じグループの最初の行かチェック
+            if (rowIndex === 0 || 
+                allRows[rowIndex].data.group !== allRows[rowIndex - 1].data.group) {
+                return 2;
+            }
+            return 1;
+        },
+        // 結合されたセルのスタイリング
+        cellClassRules: {
+            'cell-span': (params) => {
+                const rowIndex = params.node.rowIndex;
+                const allRows = params.api.getModel().rowsToDisplay;
+                return rowIndex === 0 || 
+                    allRows[rowIndex].data.group !== allRows[rowIndex - 1].data.group;
+            }
+        },
+        editable: false
+    },
+    {
+        field: 'dataA',
+        headerName: 'データA',
+        editable: true
+    },
+    {
+        field: 'dataB', 
+        headerName: 'データB',
+        editable: true
+    }
+];
+
+// 空行を2行セットで追加する関数
+function addEmptyRowGroup() {
+    const groupName = `結合セル${groupCounter}`;
+    
+    const newRows = [
+        {
+            group: groupName,
+            dataA: '',
+            dataB: '',
+            isNewRow: true,
+            rowOrder: 1  // グループ内の行順
+        },
+        {
+            group: groupName,
+            dataA: '',
+            dataB: '',
+            isNewRow: true,
+            rowOrder: 2  // グループ内の行順
+        }
+    ];
+    
+    // 2行をまとめて追加
+    gridApi.applyTransaction({ 
+        add: newRows 
+    });
+    
+    groupCounter++;
+    
+    // 追加した行にフォーカス（最初の行のdataAセル）
+    const lastRowIndex = gridApi.getDisplayedRowCount() - 2;
+    gridApi.setFocusedCell(lastRowIndex, 'dataA');
+}
+
+// CSS（セル結合の見た目を整える）
+const styles = `
+    .cell-span {
+        background-color: #f0f0f0;
+        font-weight: bold;
+        text-align: center;
+    }
+`;
+```
+
+## 方式2: Pinned Rowでの実装
+
+```javascript
+// React例
+const [pinnedBottomRowData, setPinnedBottomRowData] = useState([]);
+const [groupCounter, setGroupCounter] = useState(1);
+
+// 初期化時に空の2行セットを作成
+useEffect(() => {
+    setPinnedBottomRowData(createEmptyRowGroup());
+}, []);
+
+// 空の2行セットを作成
+function createEmptyRowGroup(groupNum = null) {
+    const groupName = groupNum ? `結合セル${groupNum}` : '新規グループ';
+    return [
+        {
+            group: groupName,
+            dataA: '',
+            dataB: '',
+            isPinned: true,
+            rowOrder: 1
+        },
+        {
+            group: groupName,
+            dataA: '',
+            dataB: '',
+            isPinned: true,
+            rowOrder: 2
+        }
+    ];
+}
+
+// セル編集完了時の処理
+const onCellEditingStopped = (params) => {
+    if (params.rowPinned === 'bottom') {
+        // 2行とも入力されているかチェック
+        if (isPinnedGroupComplete()) {
+            // 実際のデータとして追加
+            const groupName = `結合セル${groupCounter}`;
+            const rowsToAdd = pinnedBottomRowData.map(row => ({
+                ...row,
+                group: groupName,
+                isPinned: false
+            }));
+            
+            gridApi.applyTransaction({ add: rowsToAdd });
+            
+            // カウンターを増やして、新しい空行セットを作成
+            setGroupCounter(groupCounter + 1);
+            setPinnedBottomRowData(createEmptyRowGroup());
+            gridApi.setGridOption('pinnedBottomRowData', createEmptyRowGroup());
+        }
+    }
+};
+
+// 2行とも必要なデータが入力されているかチェック
+function isPinnedGroupComplete() {
+    return pinnedBottomRowData.every(row => 
+        row.dataA && row.dataA.trim() !== '' &&
+        row.dataB && row.dataB.trim() !== ''
+    );
+}
+
+// Grid設定
+<AgGridReact
+    columnDefs={columnDefs}
+    pinnedBottomRowData={pinnedBottomRowData}
+    onCellEditingStopped={onCellEditingStopped}
+    // rowSpanを有効にする
+    suppressRowTransform={true}
+    // その他の設定...
+/>
+```
+
+## 補足機能の実装
+
+### グループ単位での削除機能
+
+```javascript
+// 選択されたグループを削除
+function deleteSelectedGroup() {
+    const selectedNodes = gridApi.getSelectedNodes();
+    if (selectedNodes.length === 0) return;
+    
+    // 選択された行のグループを特定
+    const selectedGroup = selectedNodes[0].data.group;
+    
+    // 同じグループのすべての行を取得
+    const rowsToDelete = [];
+    gridApi.forEachNode(node => {
+        if (node.data.group === selectedGroup) {
+            rowsToDelete.push(node.data);
+        }
+    });
+    
+    // グループ全体を削除
+    gridApi.applyTransaction({ remove: rowsToDelete });
+}
+```
+
+### グループ内での行移動制限
+
+```javascript
+// Row Draggingを使用する場合の設定
+const gridOptions = {
+    rowDragManaged: true,
+    // グループ内でのみ移動可能にする
+    onRowDragMove: (params) => {
+        const movingNode = params.node;
+        const overNode = params.overNode;
+        
+        // 異なるグループへの移動を禁止
+        if (movingNode.data.group !== overNode.data.group) {
+            params.api.setSuppressRowDrag(true);
+        }
+    }
+};
+```
+
+この実装により、Windowsフォームのような編集体験を提供しながら、論理的にグループ化された行の追加・編集が可能になります。
