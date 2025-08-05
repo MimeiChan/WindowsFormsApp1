@@ -1,0 +1,79 @@
+チートシートの内容をファクトチェックするため、AG-Grid公式ドキュメントを参照して確認していきます。チートシートのファクトチェック結果をまとめます。
+
+## ファクトチェック結果
+
+### ✅ 正確な項目
+
+1. **データバインディング**
+   - setRowData()とapplyTransaction()の使用方法は正確です
+
+2. **セル編集**
+   - editable: trueおよび条件付き編集の設定方法は正確です
+   - agSelectCellEditorの使用方法は正確です
+
+3. **フィルター**
+   - getFilterModel()とsetFilterModel()は現在もサポートされています
+   - agNumberColumnFilterの名称は正確です
+
+### ⚠️ 修正が必要な項目
+
+1. **行の追加（addIndex）**
+   - addIndexはv23.1で廃止され、v24.1で再導入されました
+   - 使用する前にAG-Gridのバージョンを確認する必要があります
+
+2. **選択モード**
+   - 最新版では`rowSelection='multiple'`ではなく`rowSelection: { mode: 'multiRow' }`を使用します
+   ```javascript
+   // 旧形式（非推奨）
+   rowSelection: 'multiple'
+   
+   // 新形式（推奨）
+   rowSelection: {
+     mode: 'multiRow',
+     enableClickSelection: true
+   }
+   ```
+
+3. **ソートAPI**
+   - setSortModel()は廃止され、applyColumnState()を使用します
+   ```javascript
+   // 旧形式（廃止）
+   gridApi.setSortModel([{ colId: 'name', sort: 'asc' }]);
+   
+   // 新形式（推奨）
+   gridApi.applyColumnState({
+     state: [{ colId: 'name', sort: 'asc' }]
+   });
+   ```
+
+4. **日付エディター**
+   - agDateCellEditorとagDateStringCellEditorの利用可能性はバージョンによって異なります
+   - 一部のバージョンではコミュニティ版で利用できない可能性があります
+
+### 📝 追加推奨事項
+
+1. **rowSpan機能**
+   - チートシートで言及されているrowSpan機能は正しいですが、suppressRowTransform: trueの設定が必要な場合があります
+
+2. **パフォーマンス最適化**
+   - rowBufferプロパティ（デフォルト10）やdebounceVerticalScrollbarの設定は正確です
+
+3. **仮想スクロール**
+   - AG-Gridはデフォルトで仮想スクロールをサポートしています
+
+4. **エクスポート機能**
+   - ExcelエクスポートはEnterprise版の機能であることを明記すべきです
+
+### 🔧 WebView2連携の補足
+
+WebView2連携のコードは概ね正確ですが、以下の点に注意：
+
+1. **エラーハンドリング**
+   - try-catchブロックでのエラーハンドリングは適切です
+   - JSON.parse/stringifyのエラー処理も含まれています
+
+2. **双方向通信**
+   - postMessageとaddEventListenerの使用方法は正確です
+   - フラグを使った更新ループの防止も適切です
+
+総じて、チートシートは実用的で有用ですが、AG-Gridのバージョンによって一部のAPIが変更されているため、使用するバージョンに応じて調整が必要です。特に選択モードとソートAPIについては最新の形式を使用することを推奨します。
