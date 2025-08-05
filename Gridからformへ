@@ -1,0 +1,339 @@
+WebView2でAG-GridのデータをWindowsFormに渡す実装を提案します。PostMessage方式が最も確実でシンプルです。
+
+## JavaScript側（AG-Grid）の実装
+
+```javascript
+// データ送信用の関数
+function sendGridDataToHost() {
+    // グリッドの全データを取得
+    const allData = [];
+    gridApi.forEachNode(node => {
+        // 新規行フラグなど、不要なプロパティを除外
+        const cleanData = {
+            group: node.data.group,
+            dataA: node.data.dataA,
+            dataB: node.data.dataB,
+            // 必要に応じて他のフィールドも追加
+        };
+        allData.push(cleanData);
+    });
+
+    // グループごとにデータを整理（オプション）
+    const groupedData = {};
+    allData.forEach(row => {
+        if (!groupedData[row.group]) {
+            groupedData[row.group] = [];
+        }
+        groupedData[row.group].push(row);
+    });
+
+    // データ送信用のメッセージオブジェクト
+    const message = {
+        type: 'gridData',
+        timestamp: new Date().toISOString(),
+        data: {
+            rows: allData,
+            groupedData: groupedData,
+            totalRows: allData.length,
+            totalGroups: Object.keys(groupedData).length
+        }
+    };
+
+    // WebView2にメッセージを送信
+    window.chrome.webview.postMessage(message);
+}
+
+// 保存ボタンなどのイベントハンドラー
+document.getElementById('saveButton').addEventListener('click', () => {
+    // バリデーション
+    if (validateGridData()) {
+        sendGridDataToHost();
+    }
+});
+
+// データバリデーション
+function validateGridData() {
+    let isValid = true;
+    const errors = [];
+
+    gridApi.forEachNode(node => {
+        // 新規行でない場合のみバリデーション
+        if (!node.data.isNewRow) {
+            if (!node.data.dataA || node.data.dataA.trim() === '') {
+                errors.push(`${node.data.group}のデータAが未入力です`);
+                isValid = false;
+            }
+            if (!node.data.dataB || node.data.dataB.trim() === '') {
+                errors.push(`${node.data.group}のデータBが未入力です`);
+                isValid = false;
+            }
+        }
+    });
+
+    if (!isValid) {
+        // エラーメッセージを送信
+        window.chrome.webview.postMessage({
+            type: 'validationError',
+            errors: errors
+        });
+    }
+
+    return isValid;
+}
+
+// C#からのメッセージを受信（双方向通信用）
+window.chrome.webview.addEventListener('message', event => {
+    const message = event.data;
+    
+    switch (message.type) {
+        case 'requestData':
+            sendGridDataToHost();
+            break;
+        case 'loadData':
+            // C#から送られたデータをグリッドにロード
+            gridApi.setRowData(message.data);
+            break;
+        case 'clearGrid':
+            gridApi.setRowData([]);
+            groupCounter = 1;
+            break;
+    }
+});
+```
+
+## C#側（WindowsForm）の実装
+
+```csharp
+using Microsoft.Web.WebView2.Core;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+public partial class MainForm : Form
+{
+    private Microsoft.Web.WebView2.WinForms.WebView2 webView;
+
+    public MainForm()
+    {
+        InitializeComponent();
+        InitializeWebView();
+    }
+
+    private async void InitializeWebView()
+    {
+        // WebView2の初期化
+        await webView.EnsureCoreWebView2Async();
+        
+        // メッセージ受信イベントの設定
+        webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+        
+        // HTMLファイルまたはURLをロード
+        webView.CoreWebView2.Navigate("file:///path/to/your/aggrid.html");
+    }
+
+    // JavaScriptからのメッセージを受信
+    private void CoreWebView2_WebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            string message = e.TryGetWebMessageAsString();
+            var messageObject = JsonConvert.DeserializeObject<GridMessage>(message);
+
+            switch (messageObject.Type)
+            {
+                case "gridData":
+                    HandleGridData(messageObject.Data);
+                    break;
+                case "validationError":
+                    HandleValidationError(messageObject.Errors);
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"データ受信エラー: {ex.Message}", "エラー", 
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    // グリッドデータの処理
+    private void HandleGridData(GridData data)
+    {
+        // DataGridViewに表示する場合
+        BindingSource bindingSource = new BindingSource();
+        bindingSource.DataSource = data.Rows;
+        dataGridView1.DataSource = bindingSource;
+
+        // またはデータベースに保存
+        SaveToDatabase(data);
+
+        // 成功メッセージ
+        MessageBox.Show($"データを受信しました。\n" +
+            $"総行数: {data.TotalRows}\n" +
+            $"グループ数: {data.TotalGroups}", 
+            "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    // バリデーションエラーの処理
+    private void HandleValidationError(List<string> errors)
+    {
+        string errorMessage = string.Join("\n", errors);
+        MessageBox.Show(errorMessage, "入力エラー", 
+            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+
+    // JavaScriptにメッセージを送信
+    private async void RequestDataButton_Click(object sender, EventArgs e)
+    {
+        var message = new
+        {
+            type = "requestData"
+        };
+        
+        string jsonMessage = JsonConvert.SerializeObject(message);
+        await webView.CoreWebView2.ExecuteScriptAsync(
+            $"window.chrome.webview.postMessage({jsonMessage})"
+        );
+    }
+
+    // データをJavaScriptに送信
+    private async void LoadDataButton_Click(object sender, EventArgs e)
+    {
+        var testData = new List<GridRow>
+        {
+            new GridRow { Group = "結合セル1", DataA = "A1", DataB = "B1" },
+            new GridRow { Group = "結合セル1", DataA = "A2", DataB = "B2" }
+        };
+
+        var message = new
+        {
+            type = "loadData",
+            data = testData
+        };
+
+        string jsonMessage = JsonConvert.SerializeObject(message);
+        await webView.CoreWebView2.ExecuteScriptAsync(
+            $"window.chrome.webview.postMessage({jsonMessage})"
+        );
+    }
+
+    // データベース保存（例）
+    private void SaveToDatabase(GridData data)
+    {
+        using (var connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+            foreach (var row in data.Rows)
+            {
+                // INSERT文の実行など
+            }
+        }
+    }
+}
+
+// データモデルクラス
+public class GridMessage
+{
+    public string Type { get; set; }
+    public GridData Data { get; set; }
+    public List<string> Errors { get; set; }
+    public DateTime Timestamp { get; set; }
+}
+
+public class GridData
+{
+    public List<GridRow> Rows { get; set; }
+    public Dictionary<string, List<GridRow>> GroupedData { get; set; }
+    public int TotalRows { get; set; }
+    public int TotalGroups { get; set; }
+}
+
+public class GridRow
+{
+    public string Group { get; set; }
+    public string DataA { get; set; }
+    public string DataB { get; set; }
+}
+```
+
+## 別の実装方法：HostObjectの使用
+
+より高度な連携が必要な場合は、HostObjectを使う方法もあります：
+
+```csharp
+// C#側 - HostObjectクラス
+[ComVisible(true)]
+public class GridHostObject
+{
+    public event EventHandler<GridDataEventArgs> DataReceived;
+
+    public void SendGridData(string jsonData)
+    {
+        var data = JsonConvert.DeserializeObject<GridData>(jsonData);
+        DataReceived?.Invoke(this, new GridDataEventArgs { Data = data });
+    }
+
+    public string GetConfiguration()
+    {
+        // 設定情報をJSONで返す
+        return JsonConvert.SerializeObject(new { 
+            allowEdit = true,
+            maxRows = 1000 
+        });
+    }
+}
+
+// WebView2初期化時
+private async void InitializeWebView()
+{
+    await webView.EnsureCoreWebView2Async();
+    
+    var hostObject = new GridHostObject();
+    hostObject.DataReceived += (s, e) => HandleGridData(e.Data);
+    
+    webView.CoreWebView2.AddHostObjectToScript("gridHost", hostObject);
+}
+```
+
+```javascript
+// JavaScript側 - HostObjectの使用
+async function sendDataViaHostObject() {
+    const data = collectGridData();
+    const jsonData = JSON.stringify(data);
+    
+    // HostObjectのメソッドを直接呼び出し
+    await window.chrome.webview.hostObjects.gridHost.SendGridData(jsonData);
+}
+
+// 設定を取得
+async function getConfiguration() {
+    const configJson = await window.chrome.webview.hostObjects.gridHost.GetConfiguration();
+    return JSON.parse(configJson);
+}
+```
+
+## パフォーマンス最適化のヒント
+
+大量データを扱う場合の最適化：
+
+```javascript
+// 分割送信
+function sendLargeDataInChunks() {
+    const allData = getAllGridData();
+    const chunkSize = 1000;
+    
+    for (let i = 0; i < allData.length; i += chunkSize) {
+        const chunk = allData.slice(i, i + chunkSize);
+        window.chrome.webview.postMessage({
+            type: 'gridDataChunk',
+            chunkIndex: Math.floor(i / chunkSize),
+            totalChunks: Math.ceil(allData.length / chunkSize),
+            data: chunk
+        });
+    }
+}
+```
+
+PostMessage方式が最もシンプルで確実です。データ量が多い場合は分割送信を検討してください。
