@@ -1,0 +1,159 @@
+了解です。グループID方式で“Excelの結合セルのように編集しても結合が維持される”実装を、安全・堅牢に組むサンプルを示します。ポイントは：
+
+結合単位を「隣接同値」ではなく明示的なグループIDで表す
+
+編集確定時に同じグループIDを持つ全行へ一括反映（表示外・フィルタ外も含む）
+
+見た目の結合は（既に使っている）AG Gridのマージ機能に任せ、値の同期はアプリ側で保証
+
+
+
+---
+
+データモデル（例）
+
+type Row = {
+  id: string;                 // getRowId で使う一意キー
+  category: string;           // 結合表示する値（編集対象）
+  categoryGroupId: string;    // category の結合グループID（不変）
+  name: string;
+  // ... 他の列
+};
+
+categoryGroupId は「どの行が同じ結合グループか」を表す固定ID（UUIDなど）。
+
+並べ替えやフィルタで表示上バラけても、編集時はID基準で全行を更新できます。
+
+見た目の結合は「同じ値が隣接している部分」が対象なので、値を揃える＝結合が継続します（表示上の並び替えで離れた場合は見た目の結合は当然解けますが、値の一貫性は保たれます）。
+
+
+
+---
+
+実装（JavaScript/TypeScript）
+
+// 結合同期対象カラム → そのグループID列 の対応
+const MERGE_MAP: Record<string, string> = {
+  category: 'categoryGroupId',
+  // 例: 他にも増やすなら "brand": "brandGroupId" など
+};
+
+type MergeEditState = {
+  colId: string | null;
+  groupId: string | null;
+  syncing: boolean;
+};
+
+const mergeEditState: MergeEditState = { colId: null, groupId: null, syncing: false };
+
+const gridOptions: GridOptions<Row> = {
+  // 行一意ID（サーバーモデルでも推奨）
+  getRowId: params => params.data.id,
+
+  // 必要に応じて
+  defaultColDef: { editable: true },
+
+  columnDefs: [
+    // 見た目の結合は既存設定を利用（自動マージ or rowSpan など）
+    { field: 'category', headerName: 'Category', editable: true },
+    { field: 'name', headerName: 'Name', editable: true },
+    // グループID列は非表示
+    { field: 'categoryGroupId', hide: true },
+  ],
+
+  // 1) 編集開始：どのグループを編集しているかを確定
+  onCellEditingStarted(params) {
+    const colId = params.column.getColId();
+    const groupKey = MERGE_MAP[colId];
+    if (!groupKey) return;
+
+    const groupId = params.node.data?.[groupKey];
+    mergeEditState.colId = colId;
+    mergeEditState.groupId = groupId ?? null;
+  },
+
+  // 2) 値確定：同一グループIDを持つ全行に新値を反映
+  onCellValueChanged(params) {
+    const { colId, groupId, syncing } = mergeEditState;
+    if (syncing || !colId || colId !== params.column.getColId()) return;
+    if (params.oldValue === params.newValue) return;
+
+    const groupKey = MERGE_MAP[colId];
+    if (!groupKey || !groupId) return;
+
+    mergeEditState.syncing = true; // 再入防止
+
+    // クライアントサイドモデル：読み込み済み全ノードを対象
+    // （フィルタ・ソートで非表示でも forEachNode は回ります）
+    params.api.forEachNode((node) => {
+      if (!node.data) return;
+      if (node.data[groupKey] === groupId && node.data[colId] !== params.newValue) {
+        node.setDataValue(colId, params.newValue);
+      }
+    });
+
+    mergeEditState.colId = null;
+    mergeEditState.groupId = null;
+    mergeEditState.syncing = false;
+  },
+};
+
+サーバーサイド/インフィニットの場合
+
+forEachNode では未ロード行は更新できません。次のどちらかを選びます。
+
+元データストアをグループIDで一括更新 → グリッドへは api.refreshCells() あるいは再フェッチ
+
+もしくは カスタムAPI（/update-group） を用意し、groupId と colId、newValue を送ってDB側で一括更新 → グリッドは再取得
+
+
+疑似コード（サーバー側更新）：
+
+onCellValueChanged: async (p) => {
+  // ...前述のガード
+  await fetch('/update-group', {
+    method: 'POST',
+    body: JSON.stringify({
+      groupId,
+      colId,
+      value: p.newValue,
+    }),
+  });
+  p.api.refreshClientSideRowModel('filter'); // or 再ロード
+}
+
+
+---
+
+実務Tips
+
+Undo/Redo
+undoRedoCellEditing を使うと各セル更新が個別履歴になります。
+“1操作”にまとめたい場合は、編集をダイアログ＋OKボタンにして「OK押下時に全行更新」を行うと運用で統一できます。
+
+新規行のグルーピング
+新規行追加時は既存グループの groupId を引き継ぐ/新規発行する運用ルールを決めておくと後続が安定。
+
+値とグループの整合
+通常は「同一グループ＝同じ表示値」で運用します。
+途中でグループ再編が必要なら、groupId を再割当て → 全行へ値反映の順に。
+
+表示の結合（マージ）の前提
+見た目の結合は隣接行が同じ値である必要があります（これはどのUIでも共通）。
+並べ替えで非隣接になれば見た目の結合は解けますが、値の一貫性はグループIDで担保されます。
+
+
+
+---
+
+まとめ
+
+グループID方式なら、編集後に同一グループ全行へ自動同期でき、結合が維持されるExcel体験を再現できます。
+
+クライアントモデルでは forEachNode + setDataValue、サーバー/巨大データではグループ一括更新APIが堅牢。
+
+見た目の結合はAG Grid側、**値の一貫性はアプリ側（グループID）**で担保、という責務分担がベストプラクティスです。
+
+
+もし、あなたの実データ構造（型、サーバーAPI、行モデル）を教えていただければ、型安全なTS版やサーバーサイドモデル対応コードに落とし込んでお渡しします。
+
