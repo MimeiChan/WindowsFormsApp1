@@ -1,0 +1,122 @@
+了解。「前行と同じ値」かつ「同じグループID」のときだけ結合するように、spanRows のカスタム関数で実現します。AG Grid v33.1+ では enableCellSpan を有効化し、各列の colDef.spanRows に コールバックを渡すと、隣接2行のペアごとに「結合すべきか」を判定できます。公式も ({ valueA, valueB }) => … の形でカスタム条件を示しています（パラメータは値だけでなく行ノードも受け取れるため、行データの groupId を比較可能）｡
+
+
+---
+
+サンプル（生のJavaScript）
+
+> 例：category 列を、categoryGroupId が同じときのみ結合。
+編集ロジックは以前の「グループID方式の一括反映」を併用してください（ここでは結合条件のみ）。
+
+
+
+<div id="myGrid" class="ag-theme-quartz" style="height: 480px"></div>
+<script type="module">
+  import { ModuleRegistry } from 'ag-grid-community';
+  import { ClientSideRowModelModule } from 'ag-grid-community';
+  import { CellSpanModule } from 'ag-grid-community'; // 重要: セル結合機能
+  import { createGrid } from 'ag-grid-community';
+
+  ModuleRegistry.registerModules([
+    ClientSideRowModelModule,
+    CellSpanModule
+  ]);
+
+  // ダミーデータ（id, 表示値, グループID）
+  const rowData = [
+    { id:'r1', category:'A', categoryGroupId:'G1', name:'X1' },
+    { id:'r2', category:'A', categoryGroupId:'G1', name:'X2' },
+    { id:'r3', category:'A', categoryGroupId:'G2', name:'X3' }, // 値は同じAだがG2 ⇒ 結合しない
+    { id:'r4', category:'B', categoryGroupId:'G2', name:'Y1' },
+    { id:'r5', category:'B', categoryGroupId:'G2', name:'Y2' },
+  ];
+
+  const gridOptions = {
+    rowData,
+    getRowId: p => p.data.id,
+    enableCellSpan: true, // 行結合を有効化（必須）
+    defaultColDef: { editable: true, resizable: true },
+
+    columnDefs: [
+      {
+        field: 'category',
+        headerName: 'Category',
+        // 「前行と同じ値」かつ「同じグループID」だけ true を返す
+        // params には隣接行の値と行ノードが渡される（v33.1+）
+        spanRows: function (params) {
+          const sameValue = params.valueA === params.valueB;
+          if (!sameValue) return false;
+          const a = params.rowNodeA && params.rowNodeA.data;
+          const b = params.rowNodeB && params.rowNodeB.data;
+          return !!(a && b && a.categoryGroupId === b.categoryGroupId);
+        },
+      },
+      { field: 'name', headerName: 'Name' },
+      { field: 'categoryGroupId', headerName: 'GroupID', editable: false, hide: true },
+    ],
+  };
+
+  createGrid(document.getElementById('myGrid'), gridOptions);
+</script>
+
+どういう仕組みか
+
+enableCellSpan: true により、隣接する**「葉行」**どうしをペアにして「結合するか？」を spanRows で判定します。
+
+spanRows の戻り値が true なら 2 行を結合。これが連鎖して連続ブロックとして見た目が 1 セルになります。
+
+コールバックには値（valueA,valueB）に加えて行ノードも渡るため、rowNodeA.data.categoryGroupId === rowNodeB.data.categoryGroupId のようにグループID一致を条件に含められます。APIの記述は spanRows が関数または booleanを受け取り、カスタムロジックが可能と明示されています。
+
+
+
+---
+
+実運用の補足
+
+編集との整合：結合を維持したいなら、前回お渡しした「グループID方式の一括反映」（onCellValueChanged で同一 groupId 全行へ新値を配布）を併用してください。
+
+ソート/フィルタ：結合は表示中で隣接していることが前提です。並べ替えで離れれば見た目の結合は解けますが、値が揃っていれば、元に戻した際に再結合されます。
+
+バージョン/モジュール：enableCellSpan と spanRows は v33.1 で導入・強化されています。モジュール利用時は CellSpanModule を登録してください。
+
+
+
+---
+
+代替策（もし rowNodeA/B が取れない環境の場合）
+
+一部の古いビルドやラッパー経由で rowNodeA/B に触れない場合は、「結合判定に使う値」自体を 値 + groupId の合成キーにする手があります：
+
+{
+  field: 'category',
+  // 内部値は "G1::A" のような合成キーにして比較させる
+  valueGetter: p => (p.data.categoryGroupId + '::' + p.data.category),
+  // 見た目は元の category を表示
+  valueFormatter: p => p.data && p.data.category,
+  spanRows: true, // 値が同じ（= 合成キー一致）なら自動結合
+  editable: true,
+  // 編集時は valueSetter で category を更新する実装が必要
+  valueSetter: p => { p.data.category = p.newValue; return true; }
+}
+
+> この方法は編集処理がやや増える一方、spanRows のカスタム関数を使わずに**「値＆グループID一致」を満たせます**。公式は spanRows: true（自動マージ）やカスタム関数の両方をサポートしています。
+
+
+
+
+---
+
+参考
+
+Row Spanning（enableCellSpan, spanRows の有効化とカスタム例）
+
+Column Options（spanRows は boolean かコールバックを受け取り、独自条件で結合可能）
+
+v33.1 での Row Spanning 追加アナウンス（機能の背景）
+
+
+
+---
+
+必要なら、あなたの実データ列名（例：brand ↔ brandGroupId など）に合わせて複数列同時対応の汎用化版（MERGE_MAP を使う）に書き換えてお渡しします。
+
