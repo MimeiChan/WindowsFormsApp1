@@ -937,9 +937,6 @@ AG-Gridの公式リファレンスを確認して、コードの正確性をフ�
 
 修正版のコードをアーティファクトに作成しました。このファクトチェック済みのコードは、AG-Grid公式ドキュメントに基づいて正確に実装されており、Community版の制限内で動作します。
 
-
-
-
 // WebView2との連携（C#にコピーイベントを通知）
 function notifyCSharpAboutCopy(cellInfo) {
     if (window.chrome && window.chrome.webview) {
@@ -981,6 +978,348 @@ function notifyCSharpAboutCopy(cellInfo) {
 
 
 このチートシートは、AG-Grid v24.1以降を基準に作成されています。使用するバージョンに応じて、一部のAPIや機能の利用可否が異なる場合があります。公式ドキュメントで確認することをお勧めします。
+
+
+
+
+# クリップボード操作（Community版）- 修正版
+
+## 重要な注意事項
+AG-Grid Community版では、Ctrl+Cによるネイティブなクリップボード機能はEnterprise版限定です。Community版でコピー機能を実現するには、手動でキーイベントをリスニングして実装する必要があります。
+
+## API変更点（ファクトチェック結果）
+- ❌ `gridApi.getRowNode(rowIndex)` - getRowNodeはIDで取得するメソッド
+- ✅ `gridApi.getDisplayedRowAtIndex(rowIndex)` - v31.1から推奨される行インデックスでの取得方法
+- ❌ `gridApi.getValue(colId, rowNode)` - v31.3で廃止
+- ✅ `gridApi.getCellValue({rowNode, colKey})` - 新しいAPI
+- ❌ `enableRangeSelection: true` - 古いAPI
+- ✅ `cellSelection: true` - 最新版のセル選択設定
+
+## 正しい実装コード
+
+### セル選択とコピー機能（Community版対応）
+
+```javascript
+// グリッド設定
+const gridOptions = {
+    columnDefs: [
+        { field: 'id', headerName: 'ID' },
+        { field: 'name', headerName: '名前' },
+        { field: 'email', headerName: 'メール' }
+    ],
+    
+    rowData: [],
+    
+    // セル選択を有効化（Community版で利用可能）
+    cellSelection: true,
+    
+    // テキスト選択を有効にする場合（オプション）
+    enableCellTextSelection: true,
+    ensureDomOrder: true,
+    
+    // グリッド準備完了時の処理
+    onGridReady: (params) => {
+        setupClipboardHandling(params.api);
+    },
+    
+    // セルフォーカス時のイベント
+    onCellFocused: (params) => {
+        if (params.rowIndex !== null && params.column) {
+            console.log('フォーカスセル:', params.rowIndex, params.column.colId);
+        }
+    }
+};
+
+// Ctrl+C キーイベントの検知と処理（修正版）
+function setupClipboardHandling(gridApi) {
+    const gridDiv = document.querySelector('#myGrid');
+    
+    gridDiv.addEventListener('keydown', (e) => {
+        // Ctrl+C または Cmd+C (Mac) の検知
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            e.preventDefault(); // デフォルト動作を防ぐ
+            handleCopyEvent(gridApi);
+        }
+    });
+}
+
+// コピー処理の実装（修正版）
+function handleCopyEvent(gridApi) {
+    // フォーカスされたセルの値を取得
+    const focusedCell = gridApi.getFocusedCell();
+    
+    if (!focusedCell) {
+        console.log('フォーカスされたセルがありません');
+        return;
+    }
+    
+    // 正しいAPI: getDisplayedRowAtIndexを使用
+    const rowNode = gridApi.getDisplayedRowAtIndex(focusedCell.rowIndex);
+    
+    if (!rowNode) {
+        console.log('行ノードが見つかりません');
+        return;
+    }
+    
+    // 正しいAPI: getCellValueを使用（v31.3以降）
+    const value = gridApi.getCellValue({
+        rowNode: rowNode,
+        colKey: focusedCell.column.colId
+    });
+    
+    // クリップボードにコピー
+    copyToClipboard(value);
+    
+    // ビジュアルフィードバック
+    showCopyFeedback(focusedCell);
+    
+    console.log('コピーした値:', value);
+    
+    // セル範囲が選択されている場合の処理
+    handleRangeSelection(gridApi);
+}
+
+// 範囲選択の処理（修正版）
+function handleRangeSelection(gridApi) {
+    // getCellRanges()はEnterprise版の機能の可能性があるため、
+    // Community版では代替実装が必要
+    try {
+        const selectedRanges = gridApi.getCellRanges ? gridApi.getCellRanges() : null;
+        
+        if (selectedRanges && selectedRanges.length > 0) {
+            const cellValues = extractRangeValues(gridApi, selectedRanges);
+            copyToClipboard(cellValues);
+            showRangeCopyFeedback(selectedRanges);
+        }
+    } catch (error) {
+        console.log('範囲選択はEnterprise版の機能です');
+    }
+}
+
+// 範囲選択されたセルの値を抽出（修正版）
+function extractRangeValues(gridApi, ranges) {
+    const values = [];
+    
+    ranges.forEach(range => {
+        const startRow = Math.min(range.startRow.rowIndex, range.endRow.rowIndex);
+        const endRow = Math.max(range.startRow.rowIndex, range.endRow.rowIndex);
+        
+        for (let rowIndex = startRow; rowIndex <= endRow; rowIndex++) {
+            const rowValues = [];
+            const rowNode = gridApi.getDisplayedRowAtIndex(rowIndex);
+            
+            if (rowNode) {
+                range.columns.forEach(column => {
+                    const value = gridApi.getCellValue({
+                        rowNode: rowNode,
+                        colKey: column.colId
+                    });
+                    rowValues.push(value || '');
+                });
+                values.push(rowValues.join('\t'));
+            }
+        }
+    });
+    
+    return values.join('\n');
+}
+
+// クリップボードへのコピー（変更なし）
+function copyToClipboard(text) {
+    // モダンブラウザのClipboard API
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(String(text))
+            .then(() => {
+                console.log('クリップボードにコピー成功');
+            })
+            .catch(err => {
+                console.error('コピー失敗:', err);
+                fallbackCopyToClipboard(text);
+            });
+    } else {
+        // フォールバック方法
+        fallbackCopyToClipboard(text);
+    }
+}
+
+// フォールバックコピー（変更なし）
+function fallbackCopyToClipboard(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = String(text);
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    textArea.style.top = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
+        console.log('フォールバック方法でコピー成功');
+    } catch (err) {
+        console.error('フォールバックコピー失敗:', err);
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+// ビジュアルフィードバック（修正版）
+function showCopyFeedback(focusedCell) {
+    // セルにフラッシュ効果を追加
+    const cellElement = document.querySelector(
+        `[row-index="${focusedCell.rowIndex}"] [col-id="${focusedCell.column.colId}"]`
+    );
+    
+    if (cellElement) {
+        cellElement.classList.add('cell-copied');
+        
+        setTimeout(() => {
+            cellElement.classList.remove('cell-copied');
+        }, 500);
+    }
+    
+    showToast('セルの値をコピーしました');
+}
+
+// トースト通知（変更なし）
+function showToast(message) {
+    const existingToast = document.querySelector('.copy-toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = 'copy-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
+
+// 選択中のセル情報を取得（修正版）
+function getSelectedCellInfo(gridApi) {
+    const focusedCell = gridApi.getFocusedCell();
+    
+    if (!focusedCell) {
+        return null;
+    }
+    
+    // 正しいAPI使用
+    const rowNode = gridApi.getDisplayedRowAtIndex(focusedCell.rowIndex);
+    
+    if (!rowNode) {
+        return null;
+    }
+    
+    const column = focusedCell.column;
+    const value = gridApi.getCellValue({
+        rowNode: rowNode,
+        colKey: column.colId
+    });
+    
+    return {
+        rowIndex: focusedCell.rowIndex,
+        colId: column.colId,
+        value: value,
+        rowData: rowNode.data,
+        column: column
+    };
+}
+
+// 初期化
+document.addEventListener('DOMContentLoaded', () => {
+    new agGrid.Grid(document.querySelector('#myGrid'), gridOptions);
+});
+```
+
+### Community版での代替実装方法
+
+Community版では、enableCellTextSelectionとensureDomOrderを設定することで、通常のテキスト選択を有効にできます：
+
+```javascript
+const gridOptions = {
+    // テキスト選択を有効化（Community版対応）
+    enableCellTextSelection: true,
+    ensureDomOrder: true,
+    
+    // これによりユーザーは通常のテキスト選択でコピー可能
+    // ただし、カスタムフォーマットは適用されない
+};
+```
+
+### CSS（変更なし）
+
+```css
+/* コピー時のセルハイライト */
+.cell-copied {
+    animation: copyFlash 0.5s ease-in-out;
+}
+
+@keyframes copyFlash {
+    0% {
+        background-color: rgba(76, 175, 80, 0.3);
+        box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+    }
+    50% {
+        background-color: rgba(76, 175, 80, 0.5);
+        box-shadow: 0 0 10px rgba(76, 175, 80, 0.7);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+/* トースト通知 */
+.copy-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #4CAF50;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    z-index: 10000;
+    font-size: 14px;
+}
+
+.copy-toast.show {
+    opacity: 1;
+}
+```
+
+## まとめ
+
+主な修正点：
+1. ✅ `getDisplayedRowAtIndex()` を使用（インデックスで行ノード取得）
+2. ✅ `getCellValue({rowNode, colKey})` を使用（新しいAPI）
+3. ✅ `cellSelection: true` を使用（最新の設定方法）
+4. ✅ Community版の制限を明記
+5. ✅ エラーハンドリングを追加
+
+この実装により、AG-Grid Community版でもCtrl+Cでセルの値をコピーできるようになります。
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
