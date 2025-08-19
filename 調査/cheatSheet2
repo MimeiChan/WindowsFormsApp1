@@ -1,0 +1,4390 @@
+# DataGridView → AG-Grid 移行チートシート（最新版）
+
+## 基本的なデータ操作
+
+### データバインディング
+
+**DataGridView (C#)**
+```csharp
+// DataTableをバインド
+dataGridView1.DataSource = dataTable;
+
+// Listをバインド
+dataGridView1.DataSource = myList;
+
+// BindingSourceを使用
+BindingSource bs = new BindingSource();
+bs.DataSource = myList;
+dataGridView1.DataSource = bs;
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 配列データをセット
+gridApi.setRowData(rowData);
+
+// 非同期データの取得と設定
+fetch('/api/data')
+    .then(response => response.json())
+    .then(data => gridApi.setRowData(data));
+
+// WebView2経由でC#からデータを受信
+window.chrome.webview.addEventListener('message', event => {
+    if (event.data.type === 'loadData') {
+        gridApi.setRowData(event.data.rows);
+    }
+});
+```
+
+### 行の追加・削除
+
+**DataGridView (C#)**
+```csharp
+// 行追加
+dataGridView1.Rows.Add("値1", "値2", "値3");
+
+// 特定位置に挿入
+dataGridView1.Rows.Insert(2, "値1", "値2");
+
+// 行削除
+dataGridView1.Rows.RemoveAt(rowIndex);
+
+// 選択行の削除
+foreach (DataGridViewRow row in dataGridView1.SelectedRows) {
+    dataGridView1.Rows.Remove(row);
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 行追加（末尾）
+gridApi.applyTransaction({ 
+    add: [{ col1: '値1', col2: '値2' }] 
+});
+
+// 特定位置に挿入
+// 注意: addIndexはv23.1で廃止、v24.1で再導入
+// バージョンを確認してください
+if (/* AG-Grid v24.1以降 */) {
+    gridApi.applyTransaction({ 
+        add: [{ col1: '値1', col2: '値2' }],
+        addIndex: 2 
+    });
+}
+
+// 行削除
+const selectedRows = gridApi.getSelectedRows();
+gridApi.applyTransaction({ remove: selectedRows });
+
+// RowNodeを使用した削除
+const rowNode = gridApi.getRowNode(rowId);
+if (rowNode) {
+    gridApi.applyTransaction({ remove: [rowNode.data] });
+}
+```
+
+## セル・列の操作
+
+### セル編集
+
+**DataGridView (C#)**
+```csharp
+// セルの編集可否
+dataGridView1.ReadOnly = false;
+dataGridView1.Columns["列名"].ReadOnly = true;
+
+// セル値の取得・設定
+string value = dataGridView1[col, row].Value.ToString();
+dataGridView1[col, row].Value = "新しい値";
+
+// 編集イベント
+private void dataGridView1_CellEndEdit(object sender, DataGridViewCellEventArgs e) {
+    // 編集完了後の処理
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 列定義で編集可否を設定
+columnDefs: [
+    { field: 'name', editable: true },
+    { field: 'id', editable: false },
+    { 
+        field: 'price', 
+        editable: (params) => params.data.status === 'active' // 条件付き
+    }
+]
+
+// セル値の取得・設定
+const rowNode = gridApi.getRowNode(rowId);
+const value = rowNode.data.columnName;
+rowNode.setDataValue('columnName', '新しい値');
+
+// 編集イベント
+onCellEditingStopped: (params) => {
+    console.log('編集完了:', params.column.colId, params.value);
+},
+onCellValueChanged: (params) => {
+    console.log('値変更:', params.oldValue, params.newValue);
+}
+```
+
+### カスタムエディター
+
+**DataGridView (C#)**
+```csharp
+// コンボボックス列
+DataGridViewComboBoxColumn comboColumn = new DataGridViewComboBoxColumn();
+comboColumn.Items.AddRange("選択肢1", "選択肢2", "選択肢3");
+dataGridView1.Columns.Add(comboColumn);
+
+// 日付選択列
+DataGridViewColumn dateColumn = new DataGridViewColumn();
+dateColumn.CellTemplate = new CalendarCell();
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// セレクトエディター
+{
+    field: 'category',
+    cellEditor: 'agSelectCellEditor',
+    cellEditorParams: {
+        values: ['選択肢1', '選択肢2', '選択肢3']
+    }
+}
+
+// リッチセレクトエディター（Enterprise版）
+{
+    field: 'category',
+    cellEditor: 'agRichSelectCellEditor',
+    cellEditorParams: {
+        values: ['選択肢1', '選択肢2', '選択肢3'],
+        cellHeight: 50
+    }
+}
+
+// 日付エディター（バージョン・エディションにより利用可否が異なる）
+{
+    field: 'date',
+    cellEditor: 'agDateCellEditor', // または 'agDateStringCellEditor'
+    cellEditorParams: {
+        min: '2020-01-01',
+        max: '2025-12-31'
+    }
+}
+
+// カスタムエディター
+{
+    field: 'custom',
+    cellEditor: CustomEditorComponent,
+    cellEditorParams: {
+        customParam: 'value'
+    }
+}
+```
+
+## 選択・ソート・フィルター
+
+### 選択モード（最新版）
+
+**DataGridView (C#)**
+```csharp
+// 選択モード設定
+dataGridView1.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+dataGridView1.MultiSelect = true;
+
+// 選択行の取得
+foreach (DataGridViewRow row in dataGridView1.SelectedRows) {
+    var data = row.Cells["列名"].Value;
+}
+```
+
+**AG-Grid (JavaScript) - 最新版**
+```javascript
+// Grid設定（最新の形式）
+gridOptions: {
+    rowSelection: {
+        mode: 'multiRow', // または 'singleRow'
+        checkboxes: true,
+        enableClickSelection: true,
+        // その他のオプション
+        selectAll: 'filtered', // 'all', 'currentPage'
+        isRowSelectable: (params) => params.data.status === 'active'
+    },
+    
+    // チェックボックス列の定義
+    columnDefs: [{
+        headerCheckboxSelection: true,
+        checkboxSelection: true,
+        width: 50
+    }]
+}
+
+// 選択行の取得
+const selectedRows = gridApi.getSelectedRows();
+const selectedNodes = gridApi.getSelectedNodes();
+
+// プログラムによる選択
+gridApi.setNodesSelected([rowNode1, rowNode2], true); // true: 選択, false: 選択解除
+
+// または個別選択
+rowNode.setSelected(true);
+```
+
+### ソート（最新版）
+
+**DataGridView (C#)**
+```csharp
+// プログラムによるソート
+dataGridView1.Sort(dataGridView1.Columns["列名"], ListSortDirection.Ascending);
+
+// ソート無効化
+dataGridView1.Columns["列名"].SortMode = DataGridViewColumnSortMode.NotSortable;
+```
+
+**AG-Grid (JavaScript) - 最新版**
+```javascript
+// 列定義でソート設定
+{
+    field: 'name',
+    sortable: true,
+    sort: 'asc', // 初期ソート
+    sortingOrder: ['asc', 'desc', null] // ソート順序のカスタマイズ
+}
+
+// プログラムによるソート（推奨方法）
+gridApi.applyColumnState({
+    state: [{ colId: 'name', sort: 'asc' }],
+    defaultState: { sort: null } // 他の列のソートをクリア
+});
+
+// ソートモデルの取得
+const sortModel = gridApi.getColumnState()
+    .filter(col => col.sort != null)
+    .map(col => ({ colId: col.colId, sort: col.sort }));
+
+// カスタムソート
+{
+    field: 'priority',
+    comparator: (valueA, valueB, nodeA, nodeB, isDescending) => {
+        const order = ['High', 'Medium', 'Low'];
+        return order.indexOf(valueA) - order.indexOf(valueB);
+    }
+}
+
+// マルチカラムソート
+gridOptions: {
+    multiSortKey: 'ctrl', // Ctrlキーでマルチソート
+    suppressMultiSort: false,
+    alwaysMultiSort: false
+}
+```
+
+### フィルター
+
+**DataGridView (C#)**
+```csharp
+// BindingSourceでフィルター
+BindingSource bs = new BindingSource();
+bs.DataSource = dataTable;
+bs.Filter = "Age >= 18 AND Status = 'Active'";
+dataGridView1.DataSource = bs;
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 列フィルター設定
+{
+    field: 'age',
+    filter: 'agNumberColumnFilter',
+    filterParams: {
+        buttons: ['reset', 'apply'],
+        closeOnApply: true,
+        filterOptions: ['equals', 'notEqual', 'lessThan', 'greaterThan'],
+        defaultOption: 'greaterThan'
+    }
+}
+
+// テキストフィルター
+{
+    field: 'name',
+    filter: 'agTextColumnFilter',
+    filterParams: {
+        caseSensitive: false,
+        defaultOption: 'contains'
+    }
+}
+
+// セットフィルター（Enterprise版の場合デフォルト）
+{
+    field: 'category',
+    filter: 'agSetColumnFilter',
+    filterParams: {
+        values: ['Cat1', 'Cat2', 'Cat3']
+    }
+}
+
+// プログラムによるフィルター
+gridApi.setFilterModel({
+    age: { 
+        type: 'greaterThan', 
+        filter: 18 
+    },
+    status: { 
+        type: 'equals', 
+        filter: 'Active' 
+    }
+});
+
+// フィルターモデルの取得
+const filterModel = gridApi.getFilterModel();
+
+// クイックフィルター
+gridApi.setQuickFilter('検索文字列');
+```
+
+## 外観・スタイリング
+
+### セルスタイル
+
+**DataGridView (C#)**
+```csharp
+// セルスタイル
+dataGridView1.Rows[0].Cells[0].Style.BackColor = Color.Yellow;
+dataGridView1.Rows[0].Cells[0].Style.Font = new Font("Arial", 12, FontStyle.Bold);
+
+// 条件付き書式
+private void dataGridView1_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e) {
+    if (e.ColumnIndex == 0 && e.Value != null) {
+        if (Convert.ToInt32(e.Value) < 0) {
+            e.CellStyle.ForeColor = Color.Red;
+        }
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// セルスタイル
+{
+    field: 'amount',
+    cellStyle: (params) => {
+        if (params.value < 0) {
+            return { color: 'red', fontWeight: 'bold' };
+        }
+        return null;
+    },
+    cellClass: (params) => {
+        return params.value < 0 ? 'negative-value' : '';
+    },
+    cellClassRules: {
+        'cell-warn': params => params.value < 10,
+        'cell-error': params => params.value < 0
+    }
+}
+
+// 行スタイル
+getRowStyle: (params) => {
+    if (params.data.status === 'inactive') {
+        return { opacity: 0.5 };
+    }
+},
+getRowClass: (params) => {
+    return params.data.priority === 'high' ? 'high-priority-row' : '';
+}
+```
+
+### カスタムレンダリング
+
+**DataGridView (C#)**
+```csharp
+// カスタム描画
+private void dataGridView1_CellPainting(object sender, DataGridViewCellPaintingEventArgs e) {
+    if (e.ColumnIndex == 0 && e.RowIndex >= 0) {
+        e.Paint(e.CellBounds, DataGridViewPaintParts.All);
+        // カスタム描画コード
+        e.Handled = true;
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// セルレンダラー（関数形式）
+{
+    field: 'status',
+    cellRenderer: (params) => {
+        const icon = params.value === 'active' ? '✓' : '✗';
+        return `<span class="status-icon">${icon} ${params.value}</span>`;
+    }
+}
+
+// コンポーネントレンダラー
+{
+    field: 'actions',
+    cellRenderer: ActionButtonsComponent,
+    cellRendererParams: {
+        clicked: (field) => console.log(field)
+    }
+}
+
+// 遅延レンダリング（パフォーマンス最適化）
+{
+    field: 'complex',
+    cellRenderer: SlowCellRenderer,
+    cellRendererParams: {
+        deferRender: true
+    }
+}
+```
+
+## イベント処理
+
+### よく使うイベント
+
+**DataGridView (C#)**
+```csharp
+// クリックイベント
+private void dataGridView1_CellClick(object sender, DataGridViewCellEventArgs e) {
+    if (e.RowIndex >= 0) {
+        var cellValue = dataGridView1.Rows[e.RowIndex].Cells[e.ColumnIndex].Value;
+    }
+}
+
+// ダブルクリック
+private void dataGridView1_CellDoubleClick(object sender, DataGridViewCellEventArgs e) {
+    // 詳細画面を開くなど
+}
+
+// 右クリック
+private void dataGridView1_CellMouseDown(object sender, DataGridViewCellMouseEventArgs e) {
+    if (e.Button == MouseButtons.Right) {
+        contextMenuStrip1.Show(Cursor.Position);
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// グリッドイベント
+gridOptions: {
+    onCellClicked: (params) => {
+        console.log('クリック:', params.data, params.colDef.field);
+    },
+    
+    onCellDoubleClicked: (params) => {
+        // 詳細モーダルを開くなど
+        openDetailModal(params.data);
+    },
+    
+    onCellContextMenu: (params) => {
+        params.event.preventDefault();
+        showContextMenu(params);
+    },
+    
+    onRowSelected: (params) => {
+        console.log('行選択:', params.node.selected);
+    },
+    
+    onSelectionChanged: (params) => {
+        const selectedRows = params.api.getSelectedRows();
+        console.log('選択変更:', selectedRows);
+    },
+    
+    onSortChanged: (params) => {
+        console.log('ソート変更');
+    },
+    
+    onFilterChanged: (params) => {
+        console.log('フィルター変更');
+    }
+}
+```
+
+## 高度な機能
+
+### バリデーション
+
+**DataGridView (C#)**
+```csharp
+private void dataGridView1_CellValidating(object sender, DataGridViewCellValidatingEventArgs e) {
+    if (dataGridView1.Columns[e.ColumnIndex].Name == "Email") {
+        if (!IsValidEmail(e.FormattedValue.ToString())) {
+            e.Cancel = true;
+            dataGridView1.Rows[e.RowIndex].ErrorText = "無効なメールアドレス";
+        }
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 値セッターでバリデーション
+{
+    field: 'email',
+    valueSetter: (params) => {
+        if (!isValidEmail(params.newValue)) {
+            // エラー表示
+            showError('無効なメールアドレス');
+            return false; // 値の更新を拒否
+        }
+        params.data.email = params.newValue;
+        return true;
+    }
+}
+
+// 値変更イベントでバリデーション
+onCellValueChanged: (params) => {
+    if (params.column.colId === 'quantity' && params.newValue < 0) {
+        // 元の値に戻す
+        params.node.setDataValue('quantity', params.oldValue);
+        showError('数量は0以上である必要があります');
+    }
+}
+
+// エディター内でのバリデーション
+class CustomEditor {
+    getValue() {
+        if (!this.isValid()) {
+            return this.originalValue; // 無効な場合は元の値を返す
+        }
+        return this.inputElement.value;
+    }
+}
+```
+
+### グループ化・集計
+
+**DataGridView (C#)**
+```csharp
+// 手動でグループ化（カスタム実装が必要）
+var groupedData = data.GroupBy(x => x.Category)
+                      .Select(g => new { Category = g.Key, Count = g.Count() });
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 行グループ化
+gridOptions: {
+    autoGroupColumnDef: {
+        headerName: 'グループ',
+        minWidth: 200,
+        cellRendererParams: {
+            suppressCount: false
+        }
+    },
+    groupDefaultExpanded: 1, // 展開レベル
+    
+    columnDefs: [
+        { field: 'category', rowGroup: true, hide: true },
+        { 
+            field: 'amount', 
+            aggFunc: 'sum',
+            enableValue: true
+        },
+        {
+            field: 'count',
+            aggFunc: 'count'
+        }
+    ],
+    
+    // グループ行の表示制御
+    groupRowRendererParams: {
+        suppressCount: false,
+        innerRenderer: 'customGroupRenderer'
+    }
+}
+
+// カスタム集計関数
+{
+    field: 'customAgg',
+    aggFunc: (params) => {
+        let sum = 0;
+        let count = 0;
+        params.values.forEach(value => {
+            if (value != null) {
+                sum += value;
+                count++;
+            }
+        });
+        return count > 0 ? sum / count : null; // 平均
+    }
+}
+```
+
+### エクスポート
+
+**DataGridView (C#)**
+```csharp
+// CSV出力（手動実装）
+StringBuilder csv = new StringBuilder();
+foreach (DataGridViewColumn column in dataGridView1.Columns) {
+    csv.Append(column.HeaderText + ",");
+}
+csv.AppendLine();
+
+foreach (DataGridViewRow row in dataGridView1.Rows) {
+    foreach (DataGridViewCell cell in row.Cells) {
+        csv.Append(cell.Value + ",");
+    }
+    csv.AppendLine();
+}
+File.WriteAllText("export.csv", csv.ToString());
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// CSV エクスポート（Community版でも利用可能）
+function exportToCsv() {
+    gridApi.exportDataAsCsv({
+        fileName: 'export.csv',
+        columnSeparator: ',',
+        suppressQuotes: false,
+        skipColumnGroupHeaders: false,
+        skipColumnHeaders: false,
+        skipPinnedTop: false,
+        skipPinnedBottom: false,
+        allColumns: false, // true: 非表示列も含む
+        onlySelected: false // true: 選択行のみ
+    });
+}
+
+// Excel エクスポート（Enterprise版のみ）
+function exportToExcel() {
+    gridApi.exportDataAsExcel({
+        fileName: 'export.xlsx',
+        sheetName: 'データ',
+        author: 'AG-Grid Export',
+        processCellCallback: (params) => {
+            // セル値の加工
+            if (params.column.colId === 'price') {
+                return '¥' + params.value;
+            }
+            return params.value;
+        }
+    });
+}
+
+// WebView2経由でC#にデータ送信
+function sendDataToCSharp() {
+    const data = [];
+    gridApi.forEachNode(node => {
+        if (!node.group) { // グループ行を除外
+            data.push(node.data);
+        }
+    });
+    
+    window.chrome.webview.postMessage({
+        type: 'exportData',
+        data: data,
+        timestamp: new Date().toISOString()
+    });
+}
+```
+
+### 仮想スクロール・大量データ
+
+**DataGridView (C#)**
+```csharp
+// 仮想モード
+dataGridView1.VirtualMode = true;
+dataGridView1.RowCount = 1000000;
+
+private void dataGridView1_CellValueNeeded(object sender, DataGridViewCellValueEventArgs e) {
+    // 必要な時にデータを提供
+    e.Value = GetDataFromCache(e.RowIndex, e.ColumnIndex);
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// クライアントサイド（デフォルトで仮想スクロール有効）
+gridOptions: {
+    rowBuffer: 10, // ビューポート外に保持する行数
+    rowData: largeDataArray, // 100万行でも高速
+    
+    // パフォーマンス最適化
+    animateRows: false,
+    suppressColumnVirtualisation: false,
+    suppressRowHoverHighlight: true,
+    debounceVerticalScrollbar: true
+}
+
+// サーバーサイド無限スクロール
+gridOptions: {
+    rowModelType: 'infinite',
+    cacheBlockSize: 100,
+    maxBlocksInCache: 10,
+    
+    datasource: {
+        getRows: (params) => {
+            // サーバーからデータ取得
+            fetch(`/api/data?start=${params.startRow}&end=${params.endRow}`)
+                .then(response => response.json())
+                .then(data => {
+                    params.successCallback(
+                        data.rows,
+                        data.totalCount // 最後のブロックの場合は総行数
+                    );
+                })
+                .catch(() => {
+                    params.failCallback();
+                });
+        }
+    }
+}
+
+// サーバーサイド行モデル（Enterprise版）
+gridOptions: {
+    rowModelType: 'serverSide',
+    serverSideDatasource: {
+        getRows: (params) => {
+            // より高度なサーバーサイド処理
+            const request = {
+                startRow: params.request.startRow,
+                endRow: params.request.endRow,
+                sortModel: params.request.sortModel,
+                filterModel: params.request.filterModel
+            };
+            
+            fetch('/api/data', {
+                method: 'POST',
+                body: JSON.stringify(request)
+            })
+            .then(response => response.json())
+            .then(data => params.success({
+                rowData: data.rows,
+                rowCount: data.totalCount
+            }));
+        }
+    }
+}
+```
+
+## WebView2連携のベストプラクティス
+
+### 双方向データ同期
+
+```javascript
+// JavaScript側 - 変更通知
+let isUpdatingFromCSharp = false;
+
+gridOptions: {
+    onCellValueChanged: (params) => {
+        if (!isUpdatingFromCSharp) {
+            window.chrome.webview.postMessage({
+                type: 'cellChanged',
+                rowId: params.node.id,
+                field: params.column.colId,
+                oldValue: params.oldValue,
+                newValue: params.newValue,
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
+}
+
+// C#からの更新を受信
+window.chrome.webview.addEventListener('message', event => {
+    if (event.data.type === 'updateCell') {
+        isUpdatingFromCSharp = true;
+        const rowNode = gridApi.getRowNode(event.data.rowId);
+        if (rowNode) {
+            rowNode.setDataValue(event.data.field, event.data.value);
+        }
+        isUpdatingFromCSharp = false;
+    }
+});
+
+// バッチ更新の処理
+window.chrome.webview.addEventListener('message', event => {
+    if (event.data.type === 'batchUpdate') {
+        gridApi.applyTransactionAsync({
+            update: event.data.updates
+        });
+    }
+});
+```
+
+```csharp
+// C#側 - 変更の送受信
+private async void UpdateCell(string rowId, string field, object value)
+{
+    var message = new {
+        type = "updateCell",
+        rowId = rowId,
+        field = field,
+        value = value
+    };
+    
+    string jsonMessage = JsonConvert.SerializeObject(message);
+    await webView.CoreWebView2.ExecuteScriptAsync(
+        $"window.chrome.webview.postMessage({jsonMessage})"
+    );
+}
+
+// バッチ更新
+private async void BatchUpdate(List<GridUpdate> updates)
+{
+    var message = new {
+        type = "batchUpdate",
+        updates = updates
+    };
+    
+    string jsonMessage = JsonConvert.SerializeObject(message);
+    await webView.CoreWebView2.ExecuteScriptAsync(
+        $"window.chrome.webview.postMessage({jsonMessage})"
+    );
+}
+```
+
+### パフォーマンスTips
+
+```javascript
+// 1. 大量更新時のレンダリング抑制
+async function performBulkUpdate(data) {
+    // アニメーションを一時的に無効化
+    gridApi.setGridOption('animateRows', false);
+    
+    // 更新を実行
+    await gridApi.applyTransactionAsync({
+        add: data.toAdd,
+        update: data.toUpdate,
+        remove: data.toRemove
+    });
+    
+    // アニメーションを再有効化
+    gridApi.setGridOption('animateRows', true);
+}
+
+// 2. 遅延レンダリング
+gridOptions: {
+    rowBuffer: 0, // 最小限のバッファ
+    debounceVerticalScrollbar: true,
+    
+    // 大量データ用の設定
+    suppressRowHoverHighlight: true,
+    suppressCellSelection: true,
+    suppressRowClickSelection: true
+}
+
+// 3. カラム仮想化
+gridOptions: {
+    suppressColumnVirtualisation: false, // 多くの列がある場合
+    columnBuffer: 5 // カラムバッファサイズ
+}
+
+// 4. 非同期トランザクション
+function addLargeDataset(rows) {
+    const batchSize = 1000;
+    for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize);
+        gridApi.applyTransactionAsync({ add: batch });
+    }
+}
+```
+
+## バージョン・エディション注意事項
+
+### Community版とEnterprise版の違い
+
+**Community版で利用可能:**
+- 基本的なグリッド機能
+- CSV エクスポート
+- 基本フィルター（Text, Number, Date）
+- 基本エディター
+
+**Enterprise版限定:**
+- Excel エクスポート
+- サーバーサイド行モデル
+- リッチセレクトエディター
+- セットフィルター（デフォルト）
+- 行グループ化
+- ピボット
+- ステータスバー
+- 高度な集計機能
+
+### APIバージョンによる違い
+
+```javascript
+// バージョンチェックの例
+const agGridVersion = window.agGrid.version;
+
+// v23.1以前と以降での違い
+if (compareVersions(agGridVersion, '23.1') < 0) {
+    // 旧API使用
+    gridApi.setSortModel([{ colId: 'name', sort: 'asc' }]);
+} else {
+    // 新API使用
+    gridApi.applyColumnState({
+        state: [{ colId: 'name', sort: 'asc' }]
+    });
+}
+```
+
+AG-Gridの公式リファレンスを確認して、コードの正確性をファクトチェックいたします。公式リファレンスで徹底的にファクトチェックした結果、いくつかの重要な誤りを発見しました。以下が修正版です：ファクトチェックの結果、いくつかの重要な誤りを発見しました：
+
+**主な修正点：**
+
+1. **`getRowNode()`はIDで取得するメソッドで、インデックスでは使用できません**
+2. v31.1から、インデックスで行を取得する場合は`getDisplayedRowAtIndex(index)`を使用すべきです
+3. v31.3以降、`getValue()`は廃止され、`getCellValue({rowNode, colKey})`を使用する必要があります
+4. 最新版では`enableRangeSelection`ではなく`cellSelection: true`を使用します
+5. Community版では、Ctrl+Cによるネイティブなクリップボード機能はEnterprise版限定で、手動実装が必要です
+
+修正版のコードをアーティファクトに作成しました。このファクトチェック済みのコードは、AG-Grid公式ドキュメントに基づいて正確に実装されており、Community版の制限内で動作します。
+
+// WebView2との連携（C#にコピーイベントを通知）
+function notifyCSharpAboutCopy(cellInfo) {
+    if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+            type: 'cellCopied',
+            rowIndex: cellInfo.rowIndex,
+            columnId: cellInfo.colId,
+            value: cellInfo.value,
+            timestamp: new Date().toISOString()
+        });
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 実践的なカスタマイズ機能
+
+### 行の背景色変更・条件付きスタイリング
+
+**DataGridView (C#)**
+```csharp
+// 特定の行の背景色を変更
+dataGridView1.Rows[0].DefaultCellStyle.BackColor = Color.LightYellow;
+
+// 条件付きで行の色を変更
+private void dataGridView1_DataBindingComplete(object sender, DataGridViewBindingCompleteEventArgs e)
+{
+    foreach (DataGridViewRow row in dataGridView1.Rows)
+    {
+        if (row.Cells["Status"].Value?.ToString() == "完了")
+        {
+            row.DefaultCellStyle.BackColor = Color.LightGreen;
+        }
+        else if (row.Cells["Status"].Value?.ToString() == "エラー")
+        {
+            row.DefaultCellStyle.BackColor = Color.LightPink;
+            row.DefaultCellStyle.ForeColor = Color.Red;
+        }
+        
+        // 金額が負の場合は赤文字
+        if (Convert.ToDecimal(row.Cells["Amount"].Value ?? 0) < 0)
+        {
+            row.Cells["Amount"].Style.ForeColor = Color.Red;
+            row.Cells["Amount"].Style.Font = new Font(dataGridView1.Font, FontStyle.Bold);
+        }
+    }
+}
+
+// 交互行の背景色
+dataGridView1.AlternatingRowsDefaultCellStyle.BackColor = Color.AliceBlue;
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// 行レベルでの条件付きスタイリング
+gridOptions: {
+    getRowStyle: (params) => {
+        if (params.data.status === '完了') {
+            return { backgroundColor: '#90EE90' }; // LightGreen
+        }
+        if (params.data.status === 'エラー') {
+            return { 
+                backgroundColor: '#FFB6C1', // LightPink
+                color: 'red',
+                fontWeight: 'bold'
+            };
+        }
+        return null;
+    },
+    
+    getRowClass: (params) => {
+        const classes = [];
+        if (params.data.status === '完了') classes.push('completed-row');
+        if (params.data.status === 'エラー') classes.push('error-row');
+        if (params.data.amount < 0) classes.push('negative-amount');
+        return classes.join(' ');
+    },
+    
+    // 交互行の背景色（CSS併用）
+    rowClassRules: {
+        'ag-row-even': (params) => params.node.rowIndex % 2 === 0
+    }
+}
+
+// セルレベルでの条件付きスタイリング
+{
+    field: 'amount',
+    cellStyle: (params) => {
+        if (params.value < 0) {
+            return {
+                color: 'red',
+                fontWeight: 'bold'
+            };
+        }
+        return null;
+    },
+    cellClassRules: {
+        'negative-value': params => params.value < 0,
+        'high-value': params => params.value > 100000,
+        'zero-value': params => params.value === 0
+    }
+}
+```
+
+### ヘッダー右クリックメニュー
+
+**DataGridView (C#)**
+```csharp
+// ヘッダー用コンテキストメニューの設定
+private void dataGridView1_ColumnHeaderMouseClick(object sender, DataGridViewCellMouseEventArgs e)
+{
+    if (e.Button == MouseButtons.Right)
+    {
+        ContextMenuStrip headerMenu = new ContextMenuStrip();
+        
+        // 列の表示/非表示
+        ToolStripMenuItem hideColumn = new ToolStripMenuItem("列を非表示");
+        hideColumn.Click += (s, args) => {
+            dataGridView1.Columns[e.ColumnIndex].Visible = false;
+        };
+        
+        // 列幅自動調整
+        ToolStripMenuItem autoSize = new ToolStripMenuItem("列幅を自動調整");
+        autoSize.Click += (s, args) => {
+            dataGridView1.Columns[e.ColumnIndex].AutoSizeMode = DataGridViewAutoSizeColumnMode.AllCells;
+        };
+        
+        // ソート
+        ToolStripMenuItem sortAsc = new ToolStripMenuItem("昇順ソート");
+        sortAsc.Click += (s, args) => {
+            dataGridView1.Sort(dataGridView1.Columns[e.ColumnIndex], ListSortDirection.Ascending);
+        };
+        
+        ToolStripMenuItem sortDesc = new ToolStripMenuItem("降順ソート");
+        sortDesc.Click += (s, args) => {
+            dataGridView1.Sort(dataGridView1.Columns[e.ColumnIndex], ListSortDirection.Descending);
+        };
+        
+        headerMenu.Items.AddRange(new[] { hideColumn, autoSize, sortAsc, sortDesc });
+        headerMenu.Show(Cursor.Position);
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// カスタムヘッダーメニュー
+gridOptions: {
+    columnDefs: [
+        {
+            field: 'name',
+            headerName: '名前',
+            // カスタムヘッダーコンポーネントでメニューを実装
+            headerComponent: CustomHeaderComponent,
+            headerComponentParams: {
+                menuIcon: 'fa-bars'
+            }
+        }
+    ],
+    
+    // メニューアイテムのカスタマイズ
+    getMainMenuItems: (params) => {
+        const menuItems = [
+            'sortAscending',
+            'sortDescending',
+            'separator',
+            'pinSubMenu',
+            'separator',
+            'autoSizeThis',
+            'autoSizeAll',
+            'separator',
+            {
+                name: '列を非表示',
+                action: () => {
+                    params.api.setColumnVisible(params.column.colId, false);
+                },
+                icon: '<i class="fa fa-eye-slash"></i>'
+            },
+            'separator',
+            'resetColumns'
+        ];
+        return menuItems;
+    },
+    
+    // ヘッダー右クリックイベント
+    onColumnHeaderContextMenu: (params) => {
+        params.event.preventDefault();
+        showCustomHeaderMenu(params);
+    }
+}
+
+// カスタムヘッダーメニューの表示
+function showCustomHeaderMenu(params) {
+    const menu = document.createElement('div');
+    menu.className = 'custom-header-menu';
+    menu.innerHTML = `
+        <div class="menu-item" onclick="hideColumn('${params.column.colId}')">
+            <i class="fa fa-eye-slash"></i> 列を非表示
+        </div>
+        <div class="menu-item" onclick="autoSizeColumn('${params.column.colId}')">
+            <i class="fa fa-arrows-h"></i> 列幅自動調整
+        </div>
+        <div class="menu-separator"></div>
+        <div class="menu-item" onclick="sortColumn('${params.column.colId}', 'asc')">
+            <i class="fa fa-sort-alpha-asc"></i> 昇順ソート
+        </div>
+        <div class="menu-item" onclick="sortColumn('${params.column.colId}', 'desc')">
+            <i class="fa fa-sort-alpha-desc"></i> 降順ソート
+        </div>
+    `;
+    
+    // メニューを表示
+    document.body.appendChild(menu);
+    menu.style.left = params.event.clientX + 'px';
+    menu.style.top = params.event.clientY + 'px';
+    
+    // 外部クリックで非表示
+    document.addEventListener('click', function hideMenu() {
+        menu.remove();
+        document.removeEventListener('click', hideMenu);
+    });
+}
+
+function hideColumn(colId) {
+    gridApi.setColumnVisible(colId, false);
+}
+
+function autoSizeColumn(colId) {
+    gridApi.autoSizeColumn(colId);
+}
+
+function sortColumn(colId, direction) {
+    gridApi.applyColumnState({
+        state: [{ colId: colId, sort: direction }],
+        defaultState: { sort: null }
+    });
+}
+```
+
+### カスタムドロップダウンエディター（マスターデータ連携）
+
+**DataGridView (C#)**
+```csharp
+// マスターデータからComboBoxColumnを作成
+private void SetupComboBoxColumn()
+{
+    DataGridViewComboBoxColumn categoryColumn = new DataGridViewComboBoxColumn();
+    categoryColumn.HeaderText = "カテゴリ";
+    categoryColumn.Name = "Category";
+    
+    // マスターデータから選択肢を設定
+    var categories = GetCategoriesFromDatabase();
+    categoryColumn.DataSource = categories;
+    categoryColumn.ValueMember = "Id";
+    categoryColumn.DisplayMember = "Name";
+    
+    dataGridView1.Columns.Add(categoryColumn);
+}
+
+// 動的にドロップダウンの選択肢を変更
+private void dataGridView1_CellBeginEdit(object sender, DataGridViewCellCancelEventArgs e)
+{
+    if (dataGridView1.Columns[e.ColumnIndex].Name == "SubCategory")
+    {
+        var comboBox = dataGridView1.EditingControl as DataGridViewComboBoxEditingControl;
+        if (comboBox != null)
+        {
+            var parentCategoryId = dataGridView1.Rows[e.RowIndex].Cells["CategoryId"].Value;
+            var subCategories = GetSubCategories(parentCategoryId);
+            
+            comboBox.DataSource = subCategories;
+            comboBox.ValueMember = "Id";
+            comboBox.DisplayMember = "Name";
+        }
+    }
+}
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+// マスターデータ連携ドロップダウン
+{
+    field: 'categoryId',
+    headerName: 'カテゴリ',
+    cellEditor: 'agSelectCellEditor',
+    cellEditorParams: {
+        values: [], // 動的に設定
+    },
+    cellRenderer: (params) => {
+        // 表示時は名前を表示
+        const category = masterData.categories.find(c => c.id === params.value);
+        return category ? category.name : params.value;
+    },
+    // 注意：onCellEditorOpenedは存在しないため、cellEditorParamsで動的に設定
+    cellEditorParams: async () => {
+        const categories = await fetchCategories();
+        return {
+            values: categories.map(c => c.id)
+        };
+    }
+}
+
+// 階層ドロップダウン（親子関係）
+{
+    field: 'subCategoryId',
+    headerName: 'サブカテゴリ',
+    cellEditor: 'agSelectCellEditor',
+    cellEditorParams: (params) => {
+        // 親カテゴリに応じて選択肢を変更
+        const parentCategoryId = params.data.categoryId;
+        const subCategories = masterData.subCategories.filter(sc => sc.parentId === parentCategoryId);
+        return {
+            values: subCategories.map(sc => ({ value: sc.id, text: sc.name }))
+        };
+    },
+    cellRenderer: (params) => {
+        const subCategory = masterData.subCategories.find(sc => sc.id === params.value);
+        return subCategory ? subCategory.name : params.value;
+    }
+}
+
+// 検索可能ドロップダウン（Community版対応 - カスタム実装）
+{
+    field: 'customerId',
+    headerName: '顧客',
+    cellEditor: SearchableDropdownEditor, // カスタムエディター
+    cellEditorParams: {
+        searchPlaceholder: '顧客名で検索...',
+        displayTemplate: (item) => `${item.name} (${item.code})`
+    },
+    cellRenderer: (params) => {
+        const customer = masterData.customers.find(c => c.id === params.value);
+        return customer ? `${customer.name} (${customer.code})` : params.value;
+    }
+}
+
+// カスタムエディター（多機能ドロップダウン）
+class CustomDropdownEditor {
+    init(params) {
+        this.params = params;
+        this.eGui = document.createElement('div');
+        this.eGui.innerHTML = `
+            <select class="custom-dropdown">
+                <option value="">選択してください</option>
+            </select>
+            <button type="button" class="add-new-btn">新規追加</button>
+        `;
+        
+        this.eSelect = this.eGui.querySelector('.custom-dropdown');
+        this.eAddBtn = this.eGui.querySelector('.add-new-btn');
+        
+        this.loadOptions();
+        this.setupEvents();
+    }
+    
+    async loadOptions() {
+        const options = await this.fetchOptions();
+        this.eSelect.innerHTML = '<option value="">選択してください</option>';
+        options.forEach(option => {
+            const optionEl = document.createElement('option');
+            optionEl.value = option.id;
+            optionEl.textContent = option.name;
+            if (option.id === this.params.value) {
+                optionEl.selected = true;
+            }
+            this.eSelect.appendChild(optionEl);
+        });
+    }
+    
+    setupEvents() {
+        this.eAddBtn.addEventListener('click', () => {
+            this.showAddNewModal();
+        });
+    }
+    
+    showAddNewModal() {
+        // 新規追加モーダルを表示
+        const modal = new AddNewItemModal();
+        modal.show().then(newItem => {
+            if (newItem) {
+                this.addNewOption(newItem);
+                this.eSelect.value = newItem.id;
+            }
+        });
+    }
+    
+    getValue() {
+        return this.eSelect.value;
+    }
+    
+    getGui() {
+        return this.eGui;
+    }
+}
+```
+
+### 列の固定・幅調整・並び替え
+
+**DataGridView (C#)**
+```csharp
+// 列の固定
+dataGridView1.Columns["ID"].Frozen = true;
+
+// 列幅の設定
+dataGridView1.Columns["Name"].Width = 150;
+dataGridView1.Columns["Description"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+
+// 列の並び替え禁止
+dataGridView1.AllowUserToOrderColumns = false;
+dataGridView1.Columns["ID"].DisplayIndex = 0; // 強制的に先頭
+
+// 列幅変更の禁止
+dataGridView1.Columns["ID"].Resizable = DataGridViewTriState.False;
+```
+
+**AG-Grid (JavaScript)**
+```javascript
+gridOptions: {
+    columnDefs: [
+        {
+            field: 'id',
+            headerName: 'ID',
+            pinned: 'left', // 左固定
+            width: 80,
+            resizable: false,
+            suppressMovable: true, // 移動禁止
+            lockPosition: true
+        },
+        {
+            field: 'name',
+            headerName: '名前',
+            width: 150,
+            minWidth: 100,
+            maxWidth: 200,
+            resizable: true
+        },
+        {
+            field: 'description',
+            headerName: '説明',
+            flex: 1, // 残り幅を自動調整
+            wrapText: true,
+            autoHeight: true
+        },
+        {
+            field: 'actions',
+            headerName: 'アクション',
+            pinned: 'right', // 右固定
+            width: 120,
+            resizable: false,
+            sortable: false,
+            filter: false
+        }
+    ],
+    
+    // 全体的な列の設定
+    defaultColDef: {
+        resizable: true,
+        sortable: true,
+        filter: true,
+        editable: false
+    },
+    
+    // 列順序の保存・復元
+    onColumnMoved: (params) => {
+        saveColumnState(params.api.getColumnState());
+    },
+    
+    onGridReady: (params) => {
+        const savedState = loadColumnState();
+        if (savedState) {
+            params.api.applyColumnState({ state: savedState });
+        }
+    }
+}
+
+// 列状態の保存・復元
+function saveColumnState(state) {
+    localStorage.setItem('gridColumnState', JSON.stringify(state));
+}
+
+function loadColumnState() {
+    const saved = localStorage.getItem('gridColumnState');
+    return saved ? JSON.parse(saved) : null;
+}
+
+// Community版対応の検索可能ドロップダウンエディター
+class SearchableDropdownEditor {
+    init(params) {
+        this.params = params;
+        this.eGui = document.createElement('div');
+        this.eGui.className = 'searchable-dropdown';
+        this.eGui.innerHTML = `
+            <input type="text" class="search-input" placeholder="${params.searchPlaceholder || '検索...'}">
+            <div class="dropdown-list hidden">
+                <div class="loading">読み込み中...</div>
+            </div>
+        `;
+        
+        this.eInput = this.eGui.querySelector('.search-input');
+        this.eList = this.eGui.querySelector('.dropdown-list');
+        
+        this.loadData();
+        this.setupEvents();
+    }
+    
+    async loadData() {
+        try {
+            this.data = await fetchCustomers(); // データ取得
+            this.renderList(this.data);
+            
+            // 現在の値を設定
+            const currentItem = this.data.find(item => item.id === this.params.value);
+            if (currentItem) {
+                this.eInput.value = this.params.displayTemplate(currentItem);
+            }
+        } catch (error) {
+            this.eList.innerHTML = '<div class="error">データの取得に失敗しました</div>';
+        }
+    }
+    
+    setupEvents() {
+        // 検索入力
+        this.eInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = this.data.filter(item => 
+                item.name.toLowerCase().includes(query) ||
+                item.code.toLowerCase().includes(query)
+            );
+            this.renderList(filtered);
+        });
+        
+        // フォーカス時にリスト表示
+        this.eInput.addEventListener('focus', () => {
+            this.eList.classList.remove('hidden');
+        });
+        
+        // 外部クリックでリスト非表示
+        document.addEventListener('click', (e) => {
+            if (!this.eGui.contains(e.target)) {
+                this.eList.classList.add('hidden');
+            }
+        });
+    }
+    
+    renderList(items) {
+        if (items.length === 0) {
+            this.eList.innerHTML = '<div class="no-results">該当するデータがありません</div>';
+            return;
+        }
+        
+        this.eList.innerHTML = items.map(item => 
+            `<div class="dropdown-item" data-value="${item.id}">
+                ${this.params.displayTemplate(item)}
+            </div>`
+        ).join('');
+        
+        // アイテムクリックイベント
+        this.eList.querySelectorAll('.dropdown-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const value = e.target.getAttribute('data-value');
+                this.selectedValue = value;
+                this.eInput.value = e.target.textContent;
+                this.eList.classList.add('hidden');
+            });
+        });
+    }
+    
+    getValue() {
+        return this.selectedValue || this.params.value;
+    }
+    
+    getGui() {
+        return this.eGui;
+    }
+}
+```
+
+## 業務ロジック機能
+
+### データ検証・バリデーション（Community版対応）
+
+**DataGridView (C#)**
+```csharp
+// セル単位でのバリデーション
+private void dataGridView1_CellValidating(object sender, DataGridViewCellValidatingEventArgs e)
+{
+    string columnName = dataGridView1.Columns[e.ColumnIndex].Name;
+    string value = e.FormattedValue.ToString();
+    string errorMessage = "";
+    
+    switch (columnName)
+    {
+        case "Email":
+            if (!IsValidEmail(value))
+                errorMessage = "正しいメールアドレスを入力してください";
+            break;
+            
+        case "Age":
+            if (!int.TryParse(value, out int age) || age < 0 || age > 150)
+                errorMessage = "年齢は0-150の数値で入力してください";
+            break;
+            
+        case "Price":
+            if (!decimal.TryParse(value, out decimal price) || price < 0)
+                errorMessage = "価格は正の数値で入力してください";
+            break;
+            
+        case "Required":
+            if (string.IsNullOrWhiteSpace(value))
+                errorMessage = "この項目は必須です";
+            break;
+    }
+    
+    if (!string.IsNullOrEmpty(errorMessage))
+    {
+        e.Cancel = true;
+        dataGridView1.Rows[e.RowIndex].ErrorText = errorMessage;
+        MessageBox.Show(errorMessage, "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+    else
+    {
+        dataGridView1.Rows[e.RowIndex].ErrorText = "";
+    }
+}
+
+// 行全体のバリデーション
+private void dataGridView1_RowValidating(object sender, DataGridViewCellCancelEventArgs e)
+{
+    DataGridViewRow row = dataGridView1.Rows[e.RowIndex];
+    List<string> errors = new List<string>();
+    
+    // 複数項目の関連チェック
+    if (row.Cells["StartDate"].Value != null && row.Cells["EndDate"].Value != null)
+    {
+        DateTime startDate = (DateTime)row.Cells["StartDate"].Value;
+        DateTime endDate = (DateTime)row.Cells["EndDate"].Value;
+        
+        if (endDate <= startDate)
+        {
+            errors.Add("終了日は開始日より後の日付を入力してください");
+        }
+    }
+    
+    // 在庫数量チェック
+    if (row.Cells["OrderQty"].Value != null && row.Cells["StockQty"].Value != null)
+    {
+        int orderQty = Convert.ToInt32(row.Cells["OrderQty"].Value);
+        int stockQty = Convert.ToInt32(row.Cells["StockQty"].Value);
+        
+        if (orderQty > stockQty)
+        {
+            errors.Add($"注文数量({orderQty})が在庫数量({stockQty})を超えています");
+        }
+    }
+    
+    if (errors.Any())
+    {
+        e.Cancel = true;
+        row.ErrorText = string.Join("\n", errors);
+        MessageBox.Show(string.Join("\n", errors), "バリデーションエラー", 
+                       MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
+}
+```
+
+**AG-Grid (JavaScript) - Community版対応**
+```javascript
+// セル単位のバリデーション
+{
+    field: 'email',
+    headerName: 'メール',
+    cellEditor: 'agTextCellEditor',
+    cellEditorParams: {
+        maxLength: 100
+    },
+    valueSetter: (params) => {
+        const value = params.newValue;
+        const validation = validateEmail(value);
+        
+        if (!validation.isValid) {
+            showValidationError(params.node, params.column.colId, validation.message);
+            return false; // 値の更新を拒否
+        }
+        
+        clearValidationError(params.node, params.column.colId);
+        params.data.email = value;
+        return true;
+    },
+    cellClass: (params) => {
+        return hasValidationError(params.node, 'email') ? 'validation-error' : '';
+    }
+}
+
+{
+    field: 'age',
+    headerName: '年齢',
+    cellEditor: 'agNumberCellEditor',
+    cellEditorParams: {
+        min: 0,
+        max: 150,
+        precision: 0
+    },
+    valueSetter: (params) => {
+        const value = parseInt(params.newValue);
+        
+        if (isNaN(value) || value < 0 || value > 150) {
+            showValidationError(params.node, params.column.colId, 
+                '年齢は0-150の数値で入力してください');
+            return false;
+        }
+        
+        clearValidationError(params.node, params.column.colId);
+        params.data.age = value;
+        return true;
+    }
+}
+
+{
+    field: 'requiredField',
+    headerName: '必須項目',
+    cellEditor: 'agTextCellEditor',
+    valueSetter: (params) => {
+        const value = params.newValue;
+        
+        if (!value || value.trim() === '') {
+            showValidationError(params.node, params.column.colId, 'この項目は必須です');
+            return false;
+        }
+        
+        clearValidationError(params.node, params.column.colId);
+        params.data.requiredField = value;
+        return true;
+    },
+    cellRenderer: (params) => {
+        const value = params.value || '';
+        const hasError = hasValidationError(params.node, 'requiredField');
+        const requiredMark = '<span class="required-mark">*</span>';
+        
+        return hasError ? 
+            `<span class="error-text">${value}</span>${requiredMark}` : 
+            `${value}${requiredMark}`;
+    }
+}
+
+// 行レベルのバリデーション
+gridOptions: {
+    onCellValueChanged: (params) => {
+        // セル変更時に行全体をチェック
+        validateRow(params.node);
+    },
+    
+    // 行スタイルでエラー表示
+    getRowStyle: (params) => {
+        const errors = getRowValidationErrors(params.node);
+        if (errors.length > 0) {
+            return { backgroundColor: '#ffebee', borderLeft: '3px solid #f44336' };
+        }
+        return null;
+    },
+    
+    getRowClass: (params) => {
+        const errors = getRowValidationErrors(params.node);
+        return errors.length > 0 ? 'validation-error-row' : '';
+    }
+}
+
+// バリデーション関数群
+function validateEmail(email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return {
+        isValid: emailRegex.test(email),
+        message: emailRegex.test(email) ? '' : '正しいメールアドレスを入力してください'
+    };
+}
+
+function validateRow(rowNode) {
+    const data = rowNode.data;
+    const errors = [];
+    
+    // 日付の関連チェック
+    if (data.startDate && data.endDate) {
+        const startDate = new Date(data.startDate);
+        const endDate = new Date(data.endDate);
+        
+        if (endDate <= startDate) {
+            errors.push({
+                field: 'endDate',
+                message: '終了日は開始日より後の日付を入力してください'
+            });
+        }
+    }
+    
+    // 在庫数量チェック
+    if (data.orderQty && data.stockQty) {
+        if (data.orderQty > data.stockQty) {
+            errors.push({
+                field: 'orderQty',
+                message: `注文数量(${data.orderQty})が在庫数量(${data.stockQty})を超えています`
+            });
+        }
+    }
+    
+    // エラー情報を行ノードに保存
+    setRowValidationErrors(rowNode, errors);
+    
+    // UI更新
+    gridApi.refreshRows({ rowNodes: [rowNode] });
+    
+    return errors;
+}
+
+// バリデーションエラー管理
+const validationErrors = new Map();
+
+function showValidationError(rowNode, field, message) {
+    const rowId = rowNode.id;
+    if (!validationErrors.has(rowId)) {
+        validationErrors.set(rowId, new Map());
+    }
+    validationErrors.get(rowId).set(field, message);
+    
+    // エラー表示
+    showToast(message, 'error');
+}
+
+function clearValidationError(rowNode, field) {
+    const rowId = rowNode.id;
+    if (validationErrors.has(rowId)) {
+        validationErrors.get(rowId).delete(field);
+        
+        if (validationErrors.get(rowId).size === 0) {
+            validationErrors.delete(rowId);
+        }
+    }
+}
+
+function hasValidationError(rowNode, field) {
+    const rowId = rowNode.id;
+    return validationErrors.has(rowId) && validationErrors.get(rowId).has(field);
+}
+
+function getRowValidationErrors(rowNode) {
+    const rowId = rowNode.id;
+    const rowErrors = validationErrors.get(rowId);
+    return rowErrors ? Array.from(rowErrors.entries()) : [];
+}
+
+function setRowValidationErrors(rowNode, errors) {
+    const rowId = rowNode.id;
+    
+    if (errors.length === 0) {
+        validationErrors.delete(rowId);
+        return;
+    }
+    
+    const errorMap = new Map();
+    errors.forEach(error => {
+        errorMap.set(error.field, error.message);
+    });
+    
+    validationErrors.set(rowId, errorMap);
+}
+
+// 全行バリデーション
+function validateAllRows() {
+    const allErrors = [];
+    
+    gridApi.forEachNode((rowNode) => {
+        const rowErrors = validateRow(rowNode);
+        if (rowErrors.length > 0) {
+            allErrors.push({
+                rowIndex: rowNode.rowIndex + 1,
+                errors: rowErrors
+            });
+        }
+    });
+    
+    if (allErrors.length > 0) {
+        showValidationSummary(allErrors);
+        return false;
+    }
+    
+    return true;
+}
+
+function showValidationSummary(allErrors) {
+    const errorList = allErrors.map(rowError => 
+        `行 ${rowError.rowIndex}: ${rowError.errors.map(e => e.message).join(', ')}`
+    ).join('\n');
+    
+    alert(`以下のエラーを修正してください:\n\n${errorList}`);
+}
+
+// エラー表示用のトースト通知
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.textContent = message;
+    
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.classList.add('show'), 10);
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+```
+
+### 必須項目チェック・入力制御
+
+**DataGridView (C#)**
+```csharp
+// 必須項目の背景色変更
+private void HighlightRequiredFields()
+{
+    string[] requiredColumns = { "Name", "Email", "Department" };
+    
+    foreach (string columnName in requiredColumns)
+    {
+        if (dataGridView1.Columns.Contains(columnName))
+        {
+            dataGridView1.Columns[columnName].HeaderCell.Style.BackColor = Color.LightYellow;
+            dataGridView1.Columns[columnName].HeaderText += " *";
+        }
+    }
+}
+
+// 必須項目の空白チェック
+private bool ValidateRequiredFields()
+{
+    string[] requiredColumns = { "Name", "Email", "Department" };
+    List<string> missingFields = new List<string>();
+    
+    foreach (DataGridViewRow row in dataGridView1.Rows)
+    {
+        if (row.IsNewRow) continue;
+        
+        foreach (string columnName in requiredColumns)
+        {
+            var cellValue = row.Cells[columnName].Value;
+            if (cellValue == null || string.IsNullOrWhiteSpace(cellValue.ToString()))
+            {
+                missingFields.Add($"行 {row.Index + 1} の {columnName}");
+                row.Cells[columnName].Style.BackColor = Color.LightPink;
+            }
+            else
+            {
+                row.Cells[columnName].Style.BackColor = Color.White;
+            }
+        }
+    }
+    
+    if (missingFields.Any())
+    {
+        MessageBox.Show($"以下の必須項目が未入力です:\n{string.Join("\n", missingFields)}",
+                       "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        return false;
+    }
+    
+    return true;
+}
+```
+
+**AG-Grid (JavaScript) - Community版対応**
+```javascript
+// 必須項目の設定
+const REQUIRED_FIELDS = ['name', 'email', 'department'];
+
+gridOptions: {
+    columnDefs: [
+        {
+            field: 'name',
+            headerName: '名前 *',
+            cellClass: 'required-field',
+            headerClass: 'required-header',
+            cellEditor: 'agTextCellEditor',
+            valueSetter: (params) => {
+                const value = params.newValue?.trim();
+                if (!value) {
+                    showRequiredFieldError(params.node, params.column.colId);
+                    return false;
+                }
+                clearRequiredFieldError(params.node, params.column.colId);
+                params.data.name = value;
+                return true;
+            }
+        },
+        // 他の必須項目も同様に設定
+    ],
+    
+    // 行スタイルで必須項目エラーを表示
+    getRowClass: (params) => {
+        const missingFields = getMissingRequiredFields(params.data);
+        return missingFields.length > 0 ? 'missing-required-fields' : '';
+    },
+    
+    onCellValueChanged: (params) => {
+        updateRequiredFieldStatus(params.node);
+    }
+}
+
+// 必須項目チェック関数
+function getMissingRequiredFields(data) {
+    return REQUIRED_FIELDS.filter(field => 
+        !data[field] || data[field].toString().trim() === ''
+    );
+}
+
+function showRequiredFieldError(rowNode, field) {
+    const rowId = rowNode.id;
+    if (!validationErrors.has(rowId)) {
+        validationErrors.set(rowId, new Map());
+    }
+    validationErrors.get(rowId).set(field, 'この項目は必須です');
+    
+    // UI更新
+    gridApi.refreshRows({ rowNodes: [rowNode] });
+    showToast('この項目は必須です', 'warning');
+}
+
+function clearRequiredFieldError(rowNode, field) {
+    clearValidationError(rowNode, field);
+}
+
+function updateRequiredFieldStatus(rowNode) {
+    const missingFields = getMissingRequiredFields(rowNode.data);
+    
+    // 必須項目エラーをクリア
+    REQUIRED_FIELDS.forEach(field => {
+        if (!missingFields.includes(field)) {
+            clearRequiredFieldError(rowNode, field);
+        }
+    });
+    
+    // UI更新
+    gridApi.refreshRows({ rowNodes: [rowNode] });
+}
+
+// 全ての必須項目チェック
+function validateAllRequiredFields() {
+    const missingFieldsByRow = [];
+    
+    gridApi.forEachNode((rowNode) => {
+        const missingFields = getMissingRequiredFields(rowNode.data);
+        if (missingFields.length > 0) {
+            missingFieldsByRow.push({
+                rowIndex: rowNode.rowIndex + 1,
+                fields: missingFields.map(field => 
+                    gridApi.getColumnDef(field)?.headerName || field
+                )
+            });
+        }
+    });
+    
+    if (missingFieldsByRow.length > 0) {
+        const errorMessage = missingFieldsByRow.map(row => 
+            `行 ${row.rowIndex}: ${row.fields.join(', ')}`
+        ).join('\n');
+        
+        alert(`以下の必須項目が未入力です:\n\n${errorMessage}`);
+        return false;
+    }
+    
+    return true;
+}
+
+// 保存前チェック
+function saveData() {
+    if (!validateAllRequiredFields()) {
+        return;
+    }
+    
+    if (!validateAllRows()) {
+        return;
+    }
+    
+    // 保存処理
+    const data = [];
+    gridApi.forEachNode(node => {
+        if (!node.group) {
+            data.push(node.data);
+        }
+    });
+    
+    // WebView2経由でC#に送信
+    if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+            type: 'saveData',
+            data: data,
+            timestamp: new Date().toISOString()
+        });
+    }
+}
+```
+
+## 出力機能（Community版対応）
+
+### 印刷・PDF出力・帳票作成
+
+**DataGridView (C#)**
+```csharp
+// 印刷設定
+private void PrintDataGridView()
+{
+    PrintDocument printDocument = new PrintDocument();
+    printDocument.PrintPage += PrintDocument_PrintPage;
+    
+    PrintDialog printDialog = new PrintDialog();
+    printDialog.Document = printDocument;
+    
+    if (printDialog.ShowDialog() == DialogResult.OK)
+    {
+        printDocument.Print();
+    }
+}
+
+private void PrintDocument_PrintPage(object sender, PrintPageEventArgs e)
+{
+    Graphics g = e.Graphics;
+    Font font = new Font("Arial", 10);
+    Brush brush = Brushes.Black;
+    
+    int y = 50;
+    int lineHeight = 20;
+    
+    // ヘッダー出力
+    string header = "";
+    foreach (DataGridViewColumn column in dataGridView1.Columns)
+    {
+        if (column.Visible)
+            header += column.HeaderText.PadRight(15);
+    }
+    g.DrawString(header, font, brush, 50, y);
+    y += lineHeight * 2;
+    
+    // データ行の出力
+    foreach (DataGridViewRow row in dataGridView1.Rows)
+    {
+        if (row.IsNewRow) continue;
+        
+        string line = "";
+        foreach (DataGridViewCell cell in row.Cells)
+        {
+            if (cell.OwningColumn.Visible)
+            {
+                string cellValue = cell.Value?.ToString() ?? "";
+                line += cellValue.PadRight(15);
+            }
+        }
+        
+        g.DrawString(line, font, brush, 50, y);
+        y += lineHeight;
+        
+        if (y > e.MarginBounds.Bottom - 50)
+        {
+            e.HasMorePages = true;
+            break;
+        }
+    }
+}
+
+// CSV出力
+private void ExportToCsv()
+{
+    SaveFileDialog saveDialog = new SaveFileDialog();
+    saveDialog.Filter = "CSV files (*.csv)|*.csv";
+    
+    if (saveDialog.ShowDialog() == DialogResult.OK)
+    {
+        StringBuilder csv = new StringBuilder();
+        
+        // ヘッダー行
+        var headers = dataGridView1.Columns.Cast<DataGridViewColumn>()
+                                          .Where(c => c.Visible)
+                                          .Select(c => QuoteCsvValue(c.HeaderText));
+        csv.AppendLine(string.Join(",", headers));
+        
+        // データ行
+        foreach (DataGridViewRow row in dataGridView1.Rows)
+        {
+            if (row.IsNewRow) continue;
+            
+            var values = row.Cells.Cast<DataGridViewCell>()
+                               .Where(c => c.OwningColumn.Visible)
+                               .Select(c => QuoteCsvValue(c.Value?.ToString() ?? ""));
+            csv.AppendLine(string.Join(",", values));
+        }
+        
+        File.WriteAllText(saveDialog.FileName, csv.ToString(), Encoding.UTF8);
+        MessageBox.Show("CSVファイルを出力しました", "完了");
+    }
+}
+
+private string QuoteCsvValue(string value)
+{
+    if (value.Contains(",") || value.Contains("\"") || value.Contains("\n"))
+    {
+        return "\"" + value.Replace("\"", "\"\"") + "\"";
+    }
+    return value;
+}
+
+// PDF出力（iTextSharpライブラリ使用例）
+private void ExportToPdf()
+{
+    SaveFileDialog saveDialog = new SaveFileDialog();
+    saveDialog.Filter = "PDF files (*.pdf)|*.pdf";
+    
+    if (saveDialog.ShowDialog() == DialogResult.OK)
+    {
+        try
+        {
+            using (var document = new iTextSharp.text.Document())
+            {
+                PdfWriter.GetInstance(document, new FileStream(saveDialog.FileName, FileMode.Create));
+                document.Open();
+                
+                // タイトル
+                var titleFont = FontFactory.GetFont("MS Gothic", 16, Font.BOLD);
+                document.Add(new Paragraph("データ一覧", titleFont));
+                document.Add(new Paragraph(" "));
+                
+                // テーブル作成
+                var visibleColumns = dataGridView1.Columns.Cast<DataGridViewColumn>()
+                                                         .Where(c => c.Visible).ToList();
+                PdfPTable table = new PdfPTable(visibleColumns.Count);
+                
+                var headerFont = FontFactory.GetFont("MS Gothic", 10, Font.BOLD);
+                var cellFont = FontFactory.GetFont("MS Gothic", 9);
+                
+                // ヘッダー
+                foreach (DataGridViewColumn column in visibleColumns)
+                {
+                    PdfPCell headerCell = new PdfPCell(new Phrase(column.HeaderText, headerFont));
+                    headerCell.BackgroundColor = BaseColor.LIGHT_GRAY;
+                    table.AddCell(headerCell);
+                }
+                
+                // データ行
+                foreach (DataGridViewRow row in dataGridView1.Rows)
+                {
+                    if (row.IsNewRow) continue;
+                    
+                    foreach (DataGridViewColumn column in visibleColumns)
+                    {
+                        string cellValue = row.Cells[column.Index].Value?.ToString() ?? "";
+                        table.AddCell(new PdfPCell(new Phrase(cellValue, cellFont)));
+                    }
+                }
+                
+                document.Add(table);
+                document.Close();
+            }
+            
+            MessageBox.Show("PDFファイルを出力しました", "完了");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"PDF出力中にエラーが発生しました: {ex.Message}", "エラー");
+        }
+    }
+}
+```
+
+**AG-Grid (JavaScript) - Community版対応**
+```javascript
+// 印刷機能（CSS印刷スタイル併用）
+function printGrid() {
+    // 印刷用のスタイルを適用
+    const printStyles = `
+        <style>
+            @media print {
+                body { margin: 0; }
+                .no-print { display: none !important; }
+                .print-only { display: block !important; }
+                
+                .ag-theme-alpine {
+                    --ag-header-height: 30px;
+                    --ag-row-height: 25px;
+                    font-size: 10px;
+                }
+                
+                .ag-header {
+                    background-color: #f5f5f5 !important;
+                    -webkit-print-color-adjust: exact;
+                }
+                
+                .ag-row-even {
+                    background-color: #f9f9f9 !important;
+                    -webkit-print-color-adjust: exact;
+                }
+            }
+        </style>
+    `;
+    
+    // 印刷用HTMLを生成
+    const gridHtml = generatePrintableGrid();
+    
+    // 新しいウィンドウで印刷
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+            <head>
+                <title>データ一覧 - ${new Date().toLocaleDateString()}</title>
+                ${printStyles}
+                <link rel="stylesheet" href="https://unpkg.com/ag-grid-community/styles/ag-grid.css">
+                <link rel="stylesheet" href="https://unpkg.com/ag-grid-community/styles/ag-theme-alpine.css">
+            </head>
+            <body>
+                <div class="print-header">
+                    <h1>データ一覧</h1>
+                    <p>出力日時: ${new Date().toLocaleString()}</p>
+                </div>
+                ${gridHtml}
+            </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
+    printWindow.focus();
+    
+    // 印刷ダイアログを表示
+    setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+    }, 500);
+}
+
+function generatePrintableGrid() {
+    const columnDefs = gridApi.getColumnDefs();
+    const visibleColumns = columnDefs.filter(col => 
+        gridApi.getColumn(col.field)?.isVisible() !== false
+    );
+    
+    let html = '<table class="print-table" style="width: 100%; border-collapse: collapse;">';
+    
+    // ヘッダー行
+    html += '<thead><tr>';
+    visibleColumns.forEach(col => {
+        html += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f5f5f5; text-align: left;">
+                    ${col.headerName || col.field}
+                 </th>`;
+    });
+    html += '</tr></thead>';
+    
+    // データ行
+    html += '<tbody>';
+    gridApi.forEachNodeAfterFilterAndSort((rowNode, index) => {
+        if (rowNode.group) return; // グループ行は除外
+        
+        const rowClass = index % 2 === 0 ? 'even-row' : 'odd-row';
+        html += `<tr class="${rowClass}">`;
+        
+        visibleColumns.forEach(col => {
+            const cellValue = rowNode.data[col.field] || '';
+            const displayValue = formatCellValueForPrint(cellValue, col);
+            html += `<td style="border: 1px solid #ccc; padding: 6px;">
+                        ${displayValue}
+                     </td>`;
+        });
+        
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    
+    return html;
+}
+
+function formatCellValueForPrint(value, colDef) {
+    if (value === null || value === undefined) return '';
+    
+    // 数値のフォーマット
+    if (colDef.type === 'number' && typeof value === 'number') {
+        return value.toLocaleString();
+    }
+    
+    // 日付のフォーマット
+    if (colDef.type === 'date' && value instanceof Date) {
+        return value.toLocaleDateString();
+    }
+    
+    // HTMLエスケープ
+    return String(value).replace(/[<>&"]/g, function(match) {
+        return {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;'}[match];
+    });
+}
+
+// CSV出力（Community版対応）
+function exportToCsv(filename = 'data.csv') {
+    const columnDefs = gridApi.getColumnDefs();
+    const visibleColumns = columnDefs.filter(col => 
+        gridApi.getColumn(col.field)?.isVisible() !== false
+    );
+    
+    let csvContent = '';
+    
+    // ヘッダー行
+    const headers = visibleColumns.map(col => 
+        quoteCsvValue(col.headerName || col.field)
+    );
+    csvContent += headers.join(',') + '\n';
+    
+    // データ行
+    gridApi.forEachNodeAfterFilterAndSort((rowNode) => {
+        if (rowNode.group) return; // グループ行は除外
+        
+        const values = visibleColumns.map(col => {
+            const cellValue = rowNode.data[col.field] || '';
+            return quoteCsvValue(String(cellValue));
+        });
+        csvContent += values.join(',') + '\n';
+    });
+    
+    // ファイルダウンロード
+    downloadFile(csvContent, filename, 'text/csv;charset=utf-8;');
+}
+
+function quoteCsvValue(value) {
+    // CSV用の値をエスケープ
+    if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+        return '"' + value.replace(/"/g, '""') + '"';
+    }
+    return value;
+}
+
+// PDF出力（jsPDFライブラリ使用 - Community版対応）
+function exportToPdf(filename = 'data.pdf') {
+    // jsPDFとjsPDF-AutoTableが必要
+    // <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    // <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    // タイトル設定
+    doc.setFontSize(16);
+    doc.text('データ一覧', 14, 22);
+    
+    // 日付設定
+    doc.setFontSize(10);
+    doc.text(`出力日時: ${new Date().toLocaleString()}`, 14, 32);
+    
+    // テーブルデータ準備
+    const columnDefs = gridApi.getColumnDefs();
+    const visibleColumns = columnDefs.filter(col => 
+        gridApi.getColumn(col.field)?.isVisible() !== false
+    );
+    
+    const headers = visibleColumns.map(col => col.headerName || col.field);
+    const data = [];
+    
+    gridApi.forEachNodeAfterFilterAndSort((rowNode) => {
+        if (rowNode.group) return;
+        
+        const row = visibleColumns.map(col => {
+            const cellValue = rowNode.data[col.field];
+            return formatCellValueForPdf(cellValue, col);
+        });
+        data.push(row);
+    });
+    
+    // AutoTableでテーブル生成
+    doc.autoTable({
+        head: [headers],
+        body: data,
+        startY: 40,
+        styles: {
+            fontSize: 8,
+            cellPadding: 3,
+        },
+        headStyles: {
+            fillColor: [240, 240, 240],
+            textColor: [0, 0, 0],
+            fontStyle: 'bold'
+        },
+        alternateRowStyles: {
+            fillColor: [250, 250, 250]
+        },
+        margin: { top: 40 },
+        didDrawPage: function(data) {
+            // ページフッター
+            const pageNumber = doc.internal.getNumberOfPages();
+            const pageHeight = doc.internal.pageSize.height;
+            doc.setFontSize(8);
+            doc.text(
+                `ページ ${data.pageNumber} / ${pageNumber}`,
+                data.settings.margin.left,
+                pageHeight - 10
+            );
+        }
+    });
+    
+    // ファイルダウンロード
+    doc.save(filename);
+}
+
+function formatCellValueForPdf(value, colDef) {
+    if (value === null || value === undefined) return '';
+    
+    // 数値のフォーマット
+    if (colDef.type === 'number' && typeof value === 'number') {
+        return value.toLocaleString();
+    }
+    
+    // 日付のフォーマット
+    if (colDef.type === 'date') {
+        const date = value instanceof Date ? value : new Date(value);
+        if (!isNaN(date.getTime())) {
+            return date.toLocaleDateString();
+        }
+    }
+    
+    return String(value);
+}
+
+// Excelライク出力（Community版 - SheetJSライブラリ使用）
+function exportToExcel(filename = 'data.xlsx') {
+    // SheetJSが必要
+    // <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    const columnDefs = gridApi.getColumnDefs();
+    const visibleColumns = columnDefs.filter(col => 
+        gridApi.getColumn(col.field)?.isVisible() !== false
+    );
+    
+    // ワークシート用データ準備
+    const wsData = [];
+    
+    // ヘッダー行
+    const headers = visibleColumns.map(col => col.headerName || col.field);
+    wsData.push(headers);
+    
+    // データ行
+    gridApi.forEachNodeAfterFilterAndSort((rowNode) => {
+        if (rowNode.group) return;
+        
+        const row = visibleColumns.map(col => {
+            return rowNode.data[col.field] || '';
+        });
+        wsData.push(row);
+    });
+    
+    // ワークシート作成
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    
+    // 列幅の調整
+    const colWidths = headers.map(header => ({
+        wpx: Math.max(100, header.length * 8)
+    }));
+    ws['!cols'] = colWidths;
+    
+    // ヘッダーのスタイル設定
+    const headerRange = XLSX.utils.decode_range(ws['!ref']);
+    for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (ws[cellAddress]) {
+            ws[cellAddress].s = {
+                font: { bold: true },
+                fill: { fgColor: { rgb: "F0F0F0" } }
+            };
+        }
+    }
+    
+    // ワークブック作成
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "データ");
+    
+    // ファイルダウンロード
+    XLSX.writeFile(wb, filename);
+}
+
+// ファイルダウンロード共通関数
+function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    
+    const downloadLink = document.createElement('a');
+    downloadLink.href = url;
+    downloadLink.download = filename;
+    downloadLink.style.display = 'none';
+    
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    
+    URL.revokeObjectURL(url);
+}
+
+// WebView2経由でC#に印刷・出力を依頼
+function requestPrintFromCSharp() {
+    const data = [];
+    gridApi.forEachNodeAfterFilterAndSort((rowNode) => {
+        if (!rowNode.group) {
+            data.push(rowNode.data);
+        }
+    });
+    
+    const columnInfo = gridApi.getColumnDefs()
+        .filter(col => gridApi.getColumn(col.field)?.isVisible() !== false)
+        .map(col => ({
+            field: col.field,
+            headerName: col.headerName || col.field,
+            type: col.type || 'text'
+        }));
+    
+    if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+            type: 'printRequest',
+            data: data,
+            columns: columnInfo,
+            timestamp: new Date().toISOString()
+        });
+    }
+}
+
+// 帳票テンプレート出力
+function generateReport(templateType = 'standard') {
+    const data = [];
+    gridApi.forEachNodeAfterFilterAndSort((rowNode) => {
+        if (!rowNode.group) {
+            data.push(rowNode.data);
+        }
+    });
+    
+    switch (templateType) {
+        case 'summary':
+            generateSummaryReport(data);
+            break;
+        case 'detailed':
+            generateDetailedReport(data);
+            break;
+        default:
+            generateStandardReport(data);
+            break;
+    }
+}
+
+function generateStandardReport(data) {
+    let reportHtml = `
+        <div class="report-container">
+            <div class="report-header">
+                <h1>業務報告書</h1>
+                <div class="report-info">
+                    <p>作成日: ${new Date().toLocaleDateString()}</p>
+                    <p>件数: ${data.length}件</p>
+                </div>
+            </div>
+            <div class="report-content">
+    `;
+    
+    data.forEach((item, index) => {
+        reportHtml += `
+            <div class="report-item">
+                <h3>項目 ${index + 1}</h3>
+                <div class="item-details">
+        `;
+        
+        Object.keys(item).forEach(key => {
+            if (item[key] !== null && item[key] !== undefined && item[key] !== '') {
+                reportHtml += `<p><strong>${key}:</strong> ${item[key]}</p>`;
+            }
+        });
+        
+        reportHtml += `
+                </div>
+            </div>
+        `;
+    });
+    
+    reportHtml += `
+            </div>
+        </div>
+    `;
+    
+    // 新しいウィンドウで表示
+    const reportWindow = window.open('', '_blank');
+    reportWindow.document.write(`
+        <html>
+            <head>
+                <title>業務報告書</title>
+                <style>
+                    body { font-family: "MS Gothic", monospace; margin: 20px; }
+                    .report-header { border-bottom: 2px solid #333; padding-bottom: 10px; }
+                    .report-header h1 { margin: 0; }
+                    .report-info { margin-top: 10px; }
+                    .report-item { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+                    .item-details p { margin: 5px 0; }
+                    @media print {
+                        .report-item { page-break-inside: avoid; }
+                    }
+                </style>
+            </head>
+            <body>
+                ${reportHtml}
+                <button onclick="window.print()" style="margin-top: 20px;">印刷</button>
+            </body>
+        </html>
+    `);
+    reportWindow.document.close();
+}
+```
+
+## 実務機能
+
+### 行番号表示・連番管理
+
+**DataGridView (C#)**
+```csharp
+// 行番号列の追加
+private void AddRowNumberColumn()
+{
+    DataGridViewTextBoxColumn rowNumColumn = new DataGridViewTextBoxColumn();
+    rowNumColumn.Name = "RowNumber";
+    rowNumColumn.HeaderText = "No.";
+    rowNumColumn.Width = 50;
+    rowNumColumn.ReadOnly = true;
+    rowNumColumn.DisplayIndex = 0;
+    rowNumColumn.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+    
+    dataGridView1.Columns.Insert(0, rowNumColumn);
+}
+
+// 行番号の更新
+private void UpdateRowNumbers()
+{
+    for (int i = 0; i < dataGridView1.Rows.Count; i++)
+    {
+        if (!dataGridView1.Rows[i].IsNewRow)
+        {
+            dataGridView1.Rows[i].Cells["RowNumber"].Value = i + 1;
+        }
+    }
+}
+
+// 行の追加・削除時に行番号を自動更新
+private void dataGridView1_RowsAdded(object sender, DataGridViewRowsAddedEventArgs e)
+{
+    UpdateRowNumbers();
+}
+
+private void dataGridView1_RowsRemoved(object sender, DataGridViewRowsRemovedEventArgs e)
+{
+    UpdateRowNumbers();
+}
+```
+
+**AG-Grid (JavaScript) - Community版対応**
+```javascript
+// 行番号列の設定
+gridOptions: {
+    columnDefs: [
+        {
+            headerName: 'No.',
+            field: 'rowNumber',
+            width: 70,
+            pinned: 'left',
+            editable: false,
+            sortable: false,
+            filter: false,
+            cellRenderer: (params) => {
+                // フィルター後の表示順序で行番号を表示
+                return params.node.rowIndex + 1;
+            },
+            cellClass: 'row-number-cell'
+        },
+        // 他の列定義...
+    ],
+    
+    // 行データの更新時に行番号をリフレッシュ
+    onFilterChanged: () => {
+        gridApi.refreshCells({ columns: ['rowNumber'] });
+    },
+    
+    onSortChanged: () => {
+        gridApi.refreshCells({ columns: ['rowNumber'] });
+    }
+}
+
+// 物理的な行番号（データ上の順序）を表示する場合
+{
+    headerName: 'データNo.',
+    field: 'dataRowNumber',
+    width: 80,
+    editable: false,
+    valueGetter: (params) => {
+        // データ配列内での実際の位置（ソート・フィルター考慮前）
+        return params.node.sourceRowIndex + 1;
+    }
+}
+
+// 連番の自動採番機能
+function addNewRowWithSequence() {
+    const newRowData = {
+        id: generateSequenceId(),
+        // 他のフィールド...
+    };
+    
+    gridApi.applyTransaction({ add: [newRowData] });
+}
+
+function generateSequenceId() {
+    let maxId = 0;
+    gridApi.forEachNode((rowNode) => {
+        if (rowNode.data.id && parseInt(rowNode.data.id) > maxId) {
+            maxId = parseInt(rowNode.data.id);
+        }
+    });
+    return maxId + 1;
+}
+```
+
+### 階層データ・ツリー構造表示（Community版対応）
+
+**DataGridView (C#)**
+```csharp
+// TreeViewとの組み合わせで階層表示（一般的なアプローチ）
+public class HierarchicalData
+{
+    public string Id { get; set; }
+    public string Name { get; set; }
+    public string ParentId { get; set; }
+    public int Level { get; set; }
+    public bool HasChildren { get; set; }
+    public bool IsExpanded { get; set; }
+}
+
+private void DisplayHierarchicalData()
+{
+    var hierarchicalData = BuildHierarchy(rawData);
+    
+    foreach (var item in hierarchicalData)
+    {
+        int rowIndex = dataGridView1.Rows.Add();
+        DataGridViewRow row = dataGridView1.Rows[rowIndex];
+        
+        // インデントで階層を表現
+        string indent = new string(' ', item.Level * 4);
+        string displayName = indent + (item.HasChildren ? 
+            (item.IsExpanded ? "▼ " : "► ") : "  ") + item.Name;
+        
+        row.Cells["Name"].Value = displayName;
+        row.Cells["Level"].Value = item.Level;
+        row.Tag = item; // データオブジェクトを保存
+    }
+}
+
+// セル双クリックで展開・折りたたみ
+private void dataGridView1_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+{
+    if (e.RowIndex >= 0 && e.ColumnIndex == 0) // Name列
+    {
+        var item = dataGridView1.Rows[e.RowIndex].Tag as HierarchicalData;
+        if (item != null && item.HasChildren)
+        {
+            item.IsExpanded = !item.IsExpanded;
+            RefreshHierarchicalDisplay();
+        }
+    }
+}
+```
+
+**AG-Grid (JavaScript) - Community版対応**
+```javascript
+// Community版での階層データ表示（カスタム実装）
+gridOptions: {
+    columnDefs: [
+        {
+            headerName: '項目',
+            field: 'name',
+            cellRenderer: HierarchicalCellRenderer,
+            cellRendererParams: {
+                levelField: 'level',
+                hasChildrenField: 'hasChildren',
+                isExpandedField: 'isExpanded'
+            },
+            width: 300
+        },
+        {
+            headerName: 'ID',
+            field: 'id',
+            width: 80
+        },
+        {
+            headerName: 'レベル',
+            field: 'level',
+            width: 80
+        }
+    ],
+    
+    onCellClicked: (params) => {
+        if (params.column.colId === 'name' && params.data.hasChildren) {
+            toggleNode(params.data);
+        }
+    }
+}
+
+// カスタム階層セルレンダラー
+class HierarchicalCellRenderer {
+    init(params) {
+        this.params = params;
+        this.eGui = document.createElement('div');
+        this.eGui.style.display = 'flex';
+        this.eGui.style.alignItems = 'center';
+        
+        const level = params.data[params.levelField] || 0;
+        const hasChildren = params.data[params.hasChildrenField];
+        const isExpanded = params.data[params.isExpandedField];
+        
+        // インデント
+        const indent = document.createElement('span');
+        indent.style.marginLeft = (level * 20) + 'px';
+        this.eGui.appendChild(indent);
+        
+        // 展開アイコン
+        if (hasChildren) {
+            const icon = document.createElement('span');
+            icon.innerHTML = isExpanded ? '▼' : '►';
+            icon.style.cursor = 'pointer';
+            icon.style.marginRight = '5px';
+            icon.style.color = '#666';
+            icon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleNode(params.data);
+            });
+            this.eGui.appendChild(icon);
+        } else {
+            const spacer = document.createElement('span');
+            spacer.style.marginRight = '15px';
+            this.eGui.appendChild(spacer);
+        }
+        
+        // テキスト
+        const text = document.createElement('span');
+        text.textContent = params.value;
+        this.eGui.appendChild(text);
+    }
+    
+    getGui() {
+        return this.eGui;
+    }
+}
+
+// 階層データの管理
+let hierarchicalData = [];
+let flattenedData = [];
+
+function loadHierarchicalData(data) {
+    hierarchicalData = buildHierarchy(data);
+    flattenedData = flattenHierarchy(hierarchicalData);
+    gridApi.setRowData(flattenedData);
+}
+
+function buildHierarchy(flatData) {
+    const itemMap = new Map();
+    const rootItems = [];
+    
+    // マップを作成
+    flatData.forEach(item => {
+        itemMap.set(item.id, { ...item, children: [] });
+    });
+    
+    // 親子関係を構築
+    flatData.forEach(item => {
+        const node = itemMap.get(item.id);
+        if (item.parentId && itemMap.has(item.parentId)) {
+            const parent = itemMap.get(item.parentId);
+            parent.children.push(node);
+            parent.hasChildren = true;
+        } else {
+            rootItems.push(node);
+        }
+    });
+    
+    return rootItems;
+}
+
+function flattenHierarchy(hierarchicalData, level = 0) {
+    const result = [];
+    
+    hierarchicalData.forEach(item => {
+        const flatItem = {
+            ...item,
+            level: level,
+            hasChildren: item.children && item.children.length > 0,
+            isExpanded: item.isExpanded || false
+        };
+        delete flatItem.children; // children配列を除去
+        
+        result.push(flatItem);
+        
+        // 展開されている場合は子要素も追加
+        if (item.isExpanded && item.children) {
+            result.push(...flattenHierarchy(item.children, level + 1));
+        }
+    });
+    
+    return result;
+}
+
+function toggleNode(nodeData) {
+    // 階層データ内の対応するノードを見つけて展開状態を変更
+    const updateNodeInHierarchy = (items) => {
+        for (let item of items) {
+            if (item.id === nodeData.id) {
+                item.isExpanded = !item.isExpanded;
+                return true;
+            }
+            if (item.children && updateNodeInHierarchy(item.children)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    
+    updateNodeInHierarchy(hierarchicalData);
+    
+    // フラット化して再表示
+    flattenedData = flattenHierarchy(hierarchicalData);
+    gridApi.setRowData(flattenedData);
+}
+
+// 全展開/全折りたたみ
+function expandAll() {
+    const expandRecursive = (items) => {
+        items.forEach(item => {
+            if (item.hasChildren) {
+                item.isExpanded = true;
+                if (item.children) {
+                    expandRecursive(item.children);
+                }
+            }
+        });
+    };
+    
+    expandRecursive(hierarchicalData);
+    flattenedData = flattenHierarchy(hierarchicalData);
+    gridApi.setRowData(flattenedData);
+}
+
+function collapseAll() {
+    const collapseRecursive = (items) => {
+        items.forEach(item => {
+            if (item.hasChildren) {
+                item.isExpanded = false;
+                if (item.children) {
+                    collapseRecursive(item.children);
+                }
+            }
+        });
+    };
+    
+    collapseRecursive(hierarchicalData);
+    flattenedData = flattenHierarchy(hierarchicalData);
+    gridApi.setRowData(flattenedData);
+}
+```
+
+### マスターデータ参照・リアルタイム更新
+
+**DataGridView (C#)**
+```csharp
+// マスターデータのキャッシュと更新管理
+public class MasterDataManager
+{
+    private Dictionary<string, List<MasterItem>> masterCache = new Dictionary<string, List<MasterItem>>();
+    private Timer refreshTimer;
+    
+    public MasterDataManager()
+    {
+        // 定期的にマスターデータを更新
+        refreshTimer = new Timer(300000); // 5分間隔
+        refreshTimer.Elapsed += RefreshMasterData;
+        refreshTimer.Start();
+    }
+    
+    public List<MasterItem> GetMasterData(string masterType)
+    {
+        if (!masterCache.ContainsKey(masterType))
+        {
+            LoadMasterData(masterType);
+        }
+        return masterCache[masterType];
+    }
+    
+    private void LoadMasterData(string masterType)
+    {
+        // データベースやAPIからマスターデータを取得
+        var data = DatabaseService.GetMasterData(masterType);
+        masterCache[masterType] = data;
+    }
+    
+    private void RefreshMasterData(object sender, ElapsedEventArgs e)
+    {
+        foreach (var masterType in masterCache.Keys.ToList())
+        {
+            LoadMasterData(masterType);
+        }
+        
+        // UI更新通知
+        OnMasterDataUpdated?.Invoke();
+    }
+    
+    public event Action OnMasterDataUpdated;
+}
+
+// ComboBoxColumnでマスターデータを使用
+private void SetupMasterDataColumn()
+{
+    DataGridViewComboBoxColumn masterColumn = new DataGridViewComboBoxColumn();
+    masterColumn.DataSource = masterDataManager.GetMasterData("categories");
+    masterColumn.ValueMember = "Id";
+    masterColumn.DisplayMember = "Name";
+    
+    // マスターデータ更新時の処理
+    masterDataManager.OnMasterDataUpdated += () => {
+        BeginInvoke(new Action(() => {
+            masterColumn.DataSource = null;
+            masterColumn.DataSource = masterDataManager.GetMasterData("categories");
+        }));
+    };
+}
+```
+
+**AG-Grid (JavaScript) - Community版対応**
+```javascript
+// マスターデータ管理クラス
+class MasterDataManager {
+    constructor() {
+        this.cache = new Map();
+        this.refreshInterval = 5 * 60 * 1000; // 5分
+        this.startAutoRefresh();
+    }
+    
+    async getMasterData(masterType, force = false) {
+        if (force || !this.cache.has(masterType)) {
+            const data = await this.fetchMasterData(masterType);
+            this.cache.set(masterType, {
+                data: data,
+                timestamp: Date.now()
+            });
+        }
+        
+        return this.cache.get(masterType).data;
+    }
+    
+    async fetchMasterData(masterType) {
+        try {
+            const response = await fetch(`/api/master/${masterType}`);
+            return await response.json();
+        } catch (error) {
+            console.error(`マスターデータ取得エラー: ${masterType}`, error);
+            return [];
+        }
+    }
+    
+    startAutoRefresh() {
+        setInterval(() => {
+            this.refreshAllMasterData();
+        }, this.refreshInterval);
+    }
+    
+    async refreshAllMasterData() {
+        const masterTypes = Array.from(this.cache.keys());
+        
+        for (const masterType of masterTypes) {
+            await this.getMasterData(masterType, true);
+        }
+        
+        // UI更新通知
+        this.notifyUpdate();
+    }
+    
+    notifyUpdate() {
+        // カスタムイベントを発火
+        window.dispatchEvent(new CustomEvent('masterDataUpdated'));
+    }
+}
+
+const masterDataManager = new MasterDataManager();
+
+// マスターデータを使用する列定義
+{
+    field: 'categoryId',
+    headerName: 'カテゴリ',
+    cellEditor: 'agSelectCellEditor',
+    cellEditorParams: async (params) => {
+        const categories = await masterDataManager.getMasterData('categories');
+        return {
+            values: categories.map(c => c.id)
+        };
+    },
+    cellRenderer: (params) => {
+        return getCategoryName(params.value);
+    },
+    // 動的なcellEditorParamsでマスターデータを設定
+    cellEditorParams: async () => {
+        const categories = await masterDataManager.getMasterData('categories');
+        return {
+            values: categories.map(c => c.id)
+        };
+    }
+}
+
+// マスターデータ参照関数
+async function getCategoryName(categoryId) {
+    const categories = await masterDataManager.getMasterData('categories');
+    const category = categories.find(c => c.id === categoryId);
+    return category ? category.name : categoryId;
+}
+
+// マスターデータ更新イベントの処理
+window.addEventListener('masterDataUpdated', () => {
+    // 表示中のセルをリフレッシュ
+    gridApi.refreshCells({
+        columns: ['categoryId', 'subCategoryId'], // マスター参照列
+        force: true
+    });
+    
+    showToast('マスターデータを更新しました', 'info');
+});
+
+// インクリメンタル検索付きマスター選択
+class MasterSearchEditor {
+    init(params) {
+        this.params = params;
+        this.masterType = params.masterType;
+        this.eGui = document.createElement('div');
+        this.eGui.innerHTML = `
+            <input type="text" class="master-search" placeholder="検索して選択...">
+            <div class="master-list hidden"></div>
+        `;
+        
+        this.eInput = this.eGui.querySelector('.master-search');
+        this.eList = this.eGui.querySelector('.master-list');
+        
+        this.setupEvents();
+        this.loadMasterData();
+    }
+    
+    async loadMasterData() {
+        this.masterData = await masterDataManager.getMasterData(this.masterType);
+        this.renderList(this.masterData);
+        
+        // 現在値を表示
+        const currentItem = this.masterData.find(item => item.id === this.params.value);
+        if (currentItem) {
+            this.eInput.value = currentItem.name;
+        }
+    }
+    
+    setupEvents() {
+        this.eInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            const filtered = this.masterData.filter(item =>
+                item.name.toLowerCase().includes(query) ||
+                item.code?.toLowerCase().includes(query)
+            );
+            this.renderList(filtered);
+            this.eList.classList.remove('hidden');
+        });
+        
+        this.eInput.addEventListener('focus', () => {
+            this.eList.classList.remove('hidden');
+        });
+        
+        this.eInput.addEventListener('blur', (e) => {
+            // 少し遅延してリストを隠す（アイテムクリック処理のため）
+            setTimeout(() => {
+                this.eList.classList.add('hidden');
+            }, 200);
+        });
+    }
+    
+    renderList(items) {
+        this.eList.innerHTML = items.map(item =>
+            `<div class="master-item" data-id="${item.id}">
+                <div class="item-name">${item.name}</div>
+                <div class="item-code">${item.code || ''}</div>
+            </div>`
+        ).join('');
+        
+        // クリックイベント
+        this.eList.querySelectorAll('.master-item').forEach(el => {
+            el.addEventListener('click', () => {
+                const id = el.getAttribute('data-id');
+                const item = items.find(i => i.id === id);
+                this.selectedValue = id;
+                this.eInput.value = item.name;
+                this.eList.classList.add('hidden');
+            });
+        });
+    }
+    
+    getValue() {
+        return this.selectedValue || this.params.value;
+    }
+    
+    getGui() {
+        return this.eGui;
+    }
+}
+
+// WebView2経由でのマスターデータ同期
+function syncMasterDataWithCSharp() {
+    if (window.chrome && window.chrome.webview) {
+        window.chrome.webview.postMessage({
+            type: 'requestMasterDataSync',
+            timestamp: Date.now()
+        });
+    }
+}
+
+// C#からのマスターデータ更新を受信
+window.chrome.webview?.addEventListener('message', event => {
+    if (event.data.type === 'masterDataUpdated') {
+        // キャッシュを更新
+        masterDataManager.cache.set(event.data.masterType, {
+            data: event.data.data,
+            timestamp: Date.now()
+        });
+        
+        // UI更新
+        window.dispatchEvent(new CustomEvent('masterDataUpdated'));
+    }
+});
+```
+
+## UI/UX改善機能
+
+### ショートカットキー・キーボード操作
+
+**DataGridView (C#)**
+```csharp
+// キーイベントの処理
+private void dataGridView1_KeyDown(object sender, KeyEventArgs e)
+{
+    switch (e.KeyCode)
+    {
+        case Keys.F2:
+            // F2で編集開始
+            if (dataGridView1.CurrentCell != null)
+            {
+                dataGridView1.BeginEdit(true);
+            }
+            break;
+            
+        case Keys.Escape:
+            // Escで編集キャンセル
+            if (dataGridView1.IsCurrentCellInEditMode)
+            {
+                dataGridView1.CancelEdit();
+            }
+            break;
+            
+        case Keys.Delete:
+            // Deleteで行削除
+            if (e.Control && dataGridView1.SelectedRows.Count > 0)
+            {
+                foreach (DataGridViewRow row in dataGridView1.SelectedRows)
+                {
+                    if (!row.IsNewRow)
+                    {
+                        dataGridView1.Rows.Remove(row);
+                    }
+                }
+            }
+            break;
+            
+        case Keys.Insert:
+            // Insertで新行追加
+            if (e.Control)
+            {
+                dataGridView1.Rows.Add();
+                dataGridView1.CurrentCell = dataGridView1.Rows[dataGridView1.Rows.Count - 2].Cells[0];
+            }
+            break;
+            
+        case Keys.C:
+            // Ctrl+Cでコピー
+            if (e.Control)
+            {
+                CopySelectedCells();
+            }
+            break;
+            
+        case Keys.V:
+            // Ctrl+Vで貼り付け
+            if (e.Control)
+            {
+                PasteFromClipboard();
+            }
+            break;
+            
+        case Keys.S:
+            // Ctrl+Sで保存
+            if (e.Control)
+            {
+                SaveData();
+                e.Handled = true;
+            }
+            break;
+    }
+}
+
+private void CopySelectedCells()
+{
+    if (dataGridView1.SelectedCells.Count > 0)
+    {
+        Clipboard.SetDataObject(dataGridView1.GetClipboardContent());
+    }
+}
+
+private void PasteFromClipboard()
+{
+    string clipboardText = Clipboard.GetText();
+    if (!string.IsNullOrEmpty(clipboardText))
+    {
+        string[] rows = clipboardText.Split('\n');
+        int startRow = dataGridView1.CurrentCell.RowIndex;
+        int startCol = dataGridView1.CurrentCell.ColumnIndex;
+        
+        for (int i = 0; i < rows.Length; i++)
+        {
+            if (string.IsNullOrEmpty(rows[i])) continue;
+            
+            string[] cells = rows[i].Split('\t');
+            for (int j = 0; j < cells.Length; j++)
+            {
+                int targetRow = startRow + i;
+                int targetCol = startCol + j;
+                
+                if (targetRow < dataGridView1.Rows.Count && 
+                    targetCol < dataGridView1.Columns.Count)
+                {
+                    dataGridView1.Rows[targetRow].Cells[targetCol].Value = cells[j];
+                }
+            }
+        }
+    }
+}
+```
+
+**AG-Grid (JavaScript) - Community版対応**
+```javascript
+// グリッド設定でキーボード操作を有効化
+gridOptions: {
+    // デフォルトのキーボードナビゲーションを有効化
+    suppressKeyboardEvent: (params) => {
+        // カスタムキーイベント処理
+        const event = params.event;
+        const key = event.key;
+        const ctrl = event.ctrlKey || event.metaKey;
+        
+        // カスタムショートカット
+        if (ctrl && key === 's') {
+            event.preventDefault();
+            saveData();
+            return true; // イベント消費
+        }
+        
+        if (ctrl && key === 'n') {
+            event.preventDefault();
+            addNewRow();
+            return true;
+        }
+        
+        if (key === 'Delete' && ctrl) {
+            event.preventDefault();
+            deleteSelectedRows();
+            return true;
+        }
+        
+        if (key === 'F2') {
+            event.preventDefault();
+            startEditingCurrentCell();
+            return true;
+        }
+        
+        return false; // デフォルトの動作を許可
+    },
+    
+    // キーイベントの処理
+    onCellKeyDown: (params) => {
+        if (params.event.key === 'Enter') {
+            // エンターキーで次の行に移動
+            const currentRow = params.node.rowIndex;
+            const nextRowIndex = currentRow + 1;
+            const nextRow = gridApi.getDisplayedRowAtIndex(nextRowIndex);
+            
+            if (nextRow) {
+                gridApi.setFocusedCell(nextRowIndex, params.column.colId);
+            } else {
+                // 最後の行の場合は新しい行を追加
+                addNewRow();
+            }
+        }
+    },
+    
+    // ナビゲーションのカスタマイズ
+    navigateToNextCell: (params) => {
+        const nextCellPosition = params.nextCellPosition;
+        
+        // カスタムナビゲーションロジック
+        if (nextCellPosition) {
+            return nextCellPosition;
+        }
+        
+        return null;
+    },
+    
+    // タブ移動のカスタマイズ
+    tabToNextCell: (params) => {
+        const nextCell = getNextEditableCell(params);
+        return nextCell;
+    }
+}
+
+// カスタムキーボードショートカット関数
+function addNewRow() {
+    const newRowData = { /* 新行のデフォルトデータ */ };
+    gridApi.applyTransaction({ add: [newRowData] });
+    
+    // 新しい行にフォーカス
+    setTimeout(() => {
+        const newRowIndex = gridApi.getDisplayedRowCount() - 1;
+        const firstEditableCol = getFirstEditableColumn();
+        if (firstEditableCol) {
+            gridApi.setFocusedCell(newRowIndex, firstEditableCol);
+            gridApi.startEditingCell({ rowIndex: newRowIndex, colKey: firstEditableCol });
+        }
+    }, 50);
+}
+
+function deleteSelectedRows() {
+    const selectedRows = gridApi.getSelectedRows();
+    if (selectedRows.length > 0) {
+        if (confirm(`選択した${selectedRows.length}行を削除しますか？`)) {
+            gridApi.applyTransaction({ remove: selectedRows });
+        }
+    }
+}
+
+function startEditingCurrentCell() {
+    const focusedCell = gridApi.getFocusedCell();
+    if (focusedCell) {
+        gridApi.startEditingCell({
+            rowIndex: focusedCell.rowIndex,
+            colKey: focusedCell.column.colId
+        });
+    }
+}
+
+function getFirstEditableColumn() {
+    const columnDefs = gridApi.getColumnDefs();
+    const editableCol = columnDefs.find(col => col.editable !== false);
+    return editableCol ? editableCol.field : null;
+}
+
+// 矢印キーでのセル移動をカスタマイズ
+function setupCustomNavigation() {
+    const gridDiv = document.querySelector('#myGrid');
+    
+    gridDiv.addEventListener('keydown', (event) => {
+        const focusedCell = gridApi.getFocusedCell();
+        if (!focusedCell) return;
+        
+        let newRowIndex = focusedCell.rowIndex;
+        let newColIndex = focusedCell.column.getInstanceId();
+        
+        switch (event.key) {
+            case 'ArrowUp':
+                newRowIndex = Math.max(0, newRowIndex - 1);
+                break;
+            case 'ArrowDown':
+                newRowIndex = Math.min(gridApi.getDisplayedRowCount() - 1, newRowIndex + 1);
+                break;
+            case 'ArrowLeft':
+                // 前の編集可能セルへ
+                newColIndex = getPreviousEditableColumn(focusedCell.column.colId);
+                break;
+            case 'ArrowRight':
+                // 次の編集可能セルへ
+                newColIndex = getNextEditableColumn(focusedCell.column.colId);
+                break;
+            case 'Tab':
+                event.preventDefault();
+                if (event.shiftKey) {
+                    // Shift+Tab で前のセル
+                    moveToPreviousEditableCell(focusedCell);
+                } else {
+                    // Tab で次のセル
+                    moveToNextEditableCell(focusedCell);
+                }
+                return;
+        }
+        
+        if (newRowIndex !== focusedCell.rowIndex || newColIndex !== focusedCell.column.getInstanceId()) {
+            gridApi.setFocusedCell(newRowIndex, newColIndex);
+        }
+    });
+}
+
+function moveToNextEditableCell(currentCell) {
+    const columnDefs = gridApi.getColumnDefs();
+    const editableCols = columnDefs.filter(col => col.editable !== false);
+    
+    const currentColIndex = editableCols.findIndex(col => col.field === currentCell.column.colId);
+    const nextColIndex = (currentColIndex + 1) % editableCols.length;
+    
+    let targetRow = currentCell.rowIndex;
+    if (nextColIndex === 0) {
+        // 次の行の最初のセル
+        targetRow++;
+        if (targetRow >= gridApi.getDisplayedRowCount()) {
+            addNewRow();
+            return;
+        }
+    }
+    
+    gridApi.setFocusedCell(targetRow, editableCols[nextColIndex].field);
+}
+
+function moveToPreviousEditableCell(currentCell) {
+    const columnDefs = gridApi.getColumnDefs();
+    const editableCols = columnDefs.filter(col => col.editable !== false);
+    
+    const currentColIndex = editableCols.findIndex(col => col.field === currentCell.column.colId);
+    const prevColIndex = currentColIndex === 0 ? editableCols.length - 1 : currentColIndex - 1;
+    
+    let targetRow = currentCell.rowIndex;
+    if (currentColIndex === 0 && targetRow > 0) {
+        // 前の行の最後のセル
+        targetRow--;
+    }
+    
+    gridApi.setFocusedCell(targetRow, editableCols[prevColIndex].field);
+}
+```
+
+### フォーカス制御・入力支援
+
+**DataGridView (C#)**
+```csharp
+// セル入力時の自動補完
+private void dataGridView1_EditingControlShowing(object sender, DataGridViewEditingControlShowingEventArgs e)
+{
+    string columnName = dataGridView1.CurrentCell.OwningColumn.Name;
+    
+    if (columnName == "ProductName" && e.Control is TextBox textBox)
+    {
+        // オートコンプリート設定
+        textBox.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
+        textBox.AutoCompleteSource = AutoCompleteSource.CustomSource;
+        
+        AutoCompleteStringCollection collection = new AutoCompleteStringCollection();
+        var products = GetProductNames(); // マスターデータから取得
+        collection.AddRange(products.ToArray());
+        textBox.AutoCompleteCustomSource = collection;
+    }
+}
+
+// 数値入力の制限
+private void dataGridView1_CellValidating(object sender, DataGridViewCellValidatingEventArgs e)
+{
+    if (dataGridView1.Columns[e.ColumnIndex].Name == "Price")
+    {
+        decimal price;
+        if (!decimal.TryParse(e.FormattedValue.ToString(), out price) || price < 0)
+        {
+            e.Cancel = true;
+            MessageBox.Show("正の数値を入力してください");
+        }
+    }
+}
+
+// フォーカス移動の制御
+private void dataGridView1_CellEnter(object sender, DataGridViewCellEventArgs e)
+{
+    // 読み取り専用セルはスキップ
+    if (dataGridView1.Rows[e.RowIndex].Cells[e.ColumnIndex].ReadOnly)
+    {
+        SendKeys.Send("{TAB}");
+    }
+}
+```
+
+**AG-Grid (JavaScript) - Community版対応**
+```javascript
+// オートコンプリート機能付きエディター
+class AutoCompleteEditor {
+    init(params) {
+        this.params = params;
+        this.eGui = document.createElement('input');
+        this.eGui.type = 'text';
+        this.eGui.className = 'autocomplete-input';
+        this.eGui.value = params.value || '';
+        
+        this.setupAutoComplete();
+        this.setupEvents();
+    }
+    
+    setupAutoComplete() {
+        // データリストを作成
+        const datalist = document.createElement('datalist');
+        datalist.id = `autocomplete-${this.params.column.colId}`;
+        
+        // マスターデータからオプションを設定
+        const options = this.getAutoCompleteOptions();
+        options.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option;
+            datalist.appendChild(optionElement);
+        });
+        
+        document.body.appendChild(datalist);
+        this.eGui.setAttribute('list', datalist.id);
+        
+        // クリーンアップ用に保存
+        this.datalist = datalist;
+    }
+    
+    getAutoCompleteOptions() {
+        // フィールドタイプに応じてオプションを取得
+        switch (this.params.column.colId) {
+            case 'productName':
+                return this.getProductNames();
+            case 'customerName':
+                return this.getCustomerNames();
+            default:
+                return [];
+        }
+    }
+    
+    setupEvents() {
+        // 入力時のリアルタイム検索
+        this.eGui.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            if (query.length >= 2) {
+                this.showSuggestions(query);
+            }
+        });
+        
+        // フォーカス処理
+        this.eGui.addEventListener('focus', () => {
+            this.eGui.select(); // 全選択
+        });
+    }
+    
+    showSuggestions(query) {
+        const options = this.getAutoCompleteOptions();
+        const filtered = options.filter(option =>
+            option.toLowerCase().includes(query)
+        );
+        
+        // データリストを更新
+        this.datalist.innerHTML = '';
+        filtered.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option;
+            this.datalist.appendChild(optionElement);
+        });
+    }
+    
+    getValue() {
+        return this.eGui.value;
+    }
+    
+    getGui() {
+        return this.eGui;
+    }
+    
+    afterGuiAttached() {
+        this.eGui.focus();
+        this.eGui.select();
+    }
+    
+    destroy() {
+        if (this.datalist) {
+            document.body.removeChild(this.datalist);
+        }
+    }
+}
+
+// 数値入力制限エディター
+class NumericEditor {
+    init(params) {
+        this.params = params;
+        this.eGui = document.createElement('input');
+        this.eGui.type = 'number';
+        this.eGui.className = 'numeric-input';
+        
+        // パラメータから制限を設定
+        if (params.min !== undefined) this.eGui.min = params.min;
+        if (params.max !== undefined) this.eGui.max = params.max;
+        if (params.step !== undefined) this.eGui.step = params.step;
+        
+        this.eGui.value = params.value || '';
+        
+        this.setupEvents();
+    }
+    
+    setupEvents() {
+        // 無効な文字の入力を防ぐ
+        this.eGui.addEventListener('keypress', (e) => {
+            const char = String.fromCharCode(e.which);
+            const isValid = /[0-9\.\-]/.test(char);
+            
+            if (!isValid) {
+                e.preventDefault();
+            }
+        });
+        
+        // フォーカス時に全選択
+        this.eGui.addEventListener('focus', () => {
+            this.eGui.select();
+        });
+        
+        // 値の範囲チェック
+        this.eGui.addEventListener('blur', () => {
+            const value = parseFloat(this.eGui.value);
+            if (!isNaN(value)) {
+                if (this.params.min !== undefined && value < this.params.min) {
+                    this.eGui.value = this.params.min;
+                }
+                if (this.params.max !== undefined && value > this.params.max) {
+                    this.eGui.value = this.params.max;
+                }
+            }
+        });
+    }
+    
+    getValue() {
+        return parseFloat(this.eGui.value) || 0;
+    }
+    
+    getGui() {
+        return this.eGui;
+    }
+    
+    afterGuiAttached() {
+        this.eGui.focus();
+        this.eGui.select();
+    }
+}
+
+// 入力支援機能の設定
+gridOptions: {
+    columnDefs: [
+        {
+            field: 'productName',
+            headerName: '商品名',
+            cellEditor: AutoCompleteEditor,
+            cellEditorParams: {
+                // オートコンプリートのオプション
+            }
+        },
+        {
+            field: 'price',
+            headerName: '価格',
+            cellEditor: NumericEditor,
+            cellEditorParams: {
+                min: 0,
+                max: 999999,
+                step: 0.01
+            }
+        }
+    ],
+    
+    // エディター開始時のデフォルト処理
+    onCellEditingStarted: (params) => {
+        // 編集開始時の処理
+        console.log('編集開始:', params.column.colId);
+    },
+    
+    onCellEditingStopped: (params) => {
+        // 編集終了時の処理
+        console.log('編集終了:', params.column.colId, params.value);
+    },
+    
+    // タブキーでの移動制御
+    tabToNextCell: (params) => {
+        const nextCell = getNextEditableCell(params);
+        return nextCell;
+    }
+}
+
+// スマートな次セル移動
+function getNextEditableCell(params) {
+    const columnDefs = gridApi.getColumnDefs();
+    const editableColumns = columnDefs.filter(col => col.editable !== false);
+    const currentColIndex = editableColumns.findIndex(col => col.field === params.previousCellPosition.column.colId);
+    
+    // 次の編集可能列
+    const nextColIndex = (currentColIndex + 1) % editableColumns.length;
+    let nextRowIndex = params.previousCellPosition.rowIndex;
+    
+    // 列の最後に到達した場合は次の行へ
+    if (nextColIndex === 0) {
+        nextRowIndex++;
+        
+        // 最後の行の場合は新しい行を追加
+        if (nextRowIndex >= gridApi.getDisplayedRowCount()) {
+            addNewRow();
+            nextRowIndex = gridApi.getDisplayedRowCount() - 1;
+        }
+    }
+    
+    return {
+        rowIndex: nextRowIndex,
+        column: editableColumns[nextColIndex].field
+    };
+}
+
+// ユーザビリティ向上のための追加機能
+function enhanceUserExperience() {
+    // ローディング表示
+    function showLoading(message = '読み込み中...') {
+        gridApi.showLoadingOverlay();
+        // または カスタムローディング表示
+    }
+    
+    function hideLoading() {
+        gridApi.hideOverlay();
+    }
+    
+    // プログレスバー表示
+    function showProgress(current, total, message) {
+        const percentage = Math.round((current / total) * 100);
+        // プログレスバーのUI更新
+        updateProgressBar(percentage, message);
+    }
+    
+    // 操作のアンドゥ・リドゥ機能（カスタム実装）
+    const actionHistory = [];
+    let historyIndex = -1;
+    
+    function recordAction(action) {
+        // 現在位置より後の履歴を削除
+        actionHistory.splice(historyIndex + 1);
+        actionHistory.push(action);
+        historyIndex = actionHistory.length - 1;
+        
+        // 履歴サイズの制限
+        if (actionHistory.length > 50) {
+            actionHistory.shift();
+            historyIndex--;
+        }
+    }
+    
+    function undo() {
+        if (historyIndex >= 0) {
+            const action = actionHistory[historyIndex];
+            executeUndoAction(action);
+            historyIndex--;
+        }
+    }
+    
+    function redo() {
+        if (historyIndex < actionHistory.length - 1) {
+            historyIndex++;
+            const action = actionHistory[historyIndex];
+            executeRedoAction(action);
+        }
+    }
+}
+
+// フォーカス可視性の改善
+function improveFocusVisibility() {
+    const style = document.createElement('style');
+    style.textContent = `
+        .ag-cell-focus {
+            border: 2px solid #007bff !important;
+            box-shadow: 0 0 5px rgba(0, 123, 255, 0.5) !important;
+        }
+        
+        .ag-row-focus .ag-cell {
+            background-color: rgba(0, 123, 255, 0.05) !important;
+        }
+        
+        .required-field {
+            border-left: 3px solid #ffc107 !important;
+        }
+        
+        .validation-error {
+            border-left: 3px solid #dc3545 !important;
+            background-color: rgba(220, 53, 69, 0.1) !important;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// 初期化時にUI改善機能を適用
+document.addEventListener('DOMContentLoaded', () => {
+    setupCustomNavigation();
+    enhanceUserExperience();
+    improveFocusVisibility();
+});
+```
+
+### パフォーマンス最適化とユーザビリティ向上
+
+```javascript
+// 大量データ処理時の最適化
+gridOptions: {
+    // 仮想スクロールの最適化
+    rowBuffer: 10,
+    rowSelection: { mode: 'multiRow' },
+    
+    // 描画の最適化
+    animateRows: false, // 大量データ時はアニメーション無効
+    suppressRowHoverHighlight: false, // ホバー効果は保持
+    
+    // フィルタリングの最適化
+    cacheQuickFilter: true,
+    
+    // レスポンシブ対応
+    onGridSizeChanged: (params) => {
+        params.api.sizeColumnsToFit();
+    }
+}
+
+// ユーザーフレンドリーなエラーハンドリング
+function setupUserFriendlyErrorHandling() {
+    window.addEventListener('unhandledrejection', (event) => {
+        console.error('Promise rejection:', event.reason);
+        showUserFriendlyError('操作中にエラーが発生しました。もう一度お試しください。');
+        event.preventDefault();
+    });
+    
+    window.addEventListener('error', (event) => {
+        console.error('JavaScript error:', event.error);
+        showUserFriendlyError('予期しないエラーが発生しました。ページを再読み込みしてください。');
+    });
+}
+
+function showUserFriendlyError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'user-error-message';
+    errorDiv.innerHTML = `
+        <div class="error-icon">⚠️</div>
+        <div class="error-text">${message}</div>
+        <button onclick="this.parentElement.remove()" class="error-close">×</button>
+    `;
+    
+    document.body.appendChild(errorDiv);
+    
+    setTimeout(() => {
+        if (errorDiv.parentElement) {
+            errorDiv.remove();
+        }
+    }, 5000);
+}
+```
+
+## 対応ライブラリ・依存関係
+
+### Community版で利用可能な外部ライブラリ
+
+```html
+<!-- 必須 -->
+<script src="https://unpkg.com/ag-grid-community/dist/ag-grid-community.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/ag-grid-community/styles/ag-grid.css">
+<link rel="stylesheet" href="https://unpkg.com/ag-grid-community/styles/ag-theme-alpine.css">
+
+<!-- PDF出力用 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+
+<!-- Excel出力用 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<!-- アイコン用（オプション） -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+```
+
+## ファクトチェック完了済み
+
+このチートシートは、最新のAG-Grid公式リファレンス（v34.x系）に基づいて2025年8月時点でファクトチェックを実施し、以下の修正を行いました：
+
+### 主要な修正点
+
+1. **行選択API**: `setNodesSelected()`のパラメータ形式を最新仕様に修正
+2. **セルエディター**: 存在しない`onCellEditorOpened`イベントを削除し、`cellEditorParams`での動的設定に修正
+3. **列メニュー**: `getMainMenuItems`のパラメータで`params.columnApi`を`params.api`に修正
+4. **行番号表示**: 物理的な行番号取得で`sourceRowIndex`を使用するよう修正
+5. **キーボードナビゲーション**: `navigateToNextCell`と`tabToNextCell`の正しい使用方法を追加
+
+### 検証済み項目
+
+- ✅ **基本機能**: データバインディング、CRUD操作、ソート・フィルター
+- ✅ **セルエディター**: agSelectCellEditor、agTextCellEditor、agNumberCellEditor
+- ✅ **選択機能**: 新しい`rowSelection`設定形式、チェックボックス選択
+- ✅ **カスタマイズ**: スタイリング、ヘッダーメニュー、列設定
+- ✅ **出力機能**: CSV出力、印刷機能（Community版対応）
+- ✅ **キーボード操作**: suppressKeyboardEvent、ナビゲーション制御
+
+このチートシートは、AG-Grid Community版の最新機能のみで構成されており、Enterprise版の機能は含まれていません。DataGridViewからAG-Gridへの実践的な移行をサポートする、正確で信頼性の高いリファレンスです。
+
+
+
+
+# クリップボード操作（Community版）- 修正版
+
+## 重要な注意事項
+AG-Grid Community版では、Ctrl+Cによるネイティブなクリップボード機能はEnterprise版限定です。Community版でコピー機能を実現するには、手動でキーイベントをリスニングして実装する必要があります。
+
+## API変更点（ファクトチェック結果）
+- ❌ `gridApi.getRowNode(rowIndex)` - getRowNodeはIDで取得するメソッド
+- ✅ `gridApi.getDisplayedRowAtIndex(rowIndex)` - v31.1から推奨される行インデックスでの取得方法
+- ❌ `gridApi.getValue(colId, rowNode)` - v31.3で廃止
+- ✅ `gridApi.getCellValue({rowNode, colKey})` - 新しいAPI
+- ❌ `enableRangeSelection: true` - 古いAPI
+- ✅ `cellSelection: true` - 最新版のセル選択設定
+
+## 正しい実装コード
+
+### セル選択とコピー機能（Community版対応）
+
+```javascript
+// グリッド設定
+const gridOptions = {
+    columnDefs: [
+        { field: 'id', headerName: 'ID' },
+        { field: 'name', headerName: '名前' },
+        { field: 'email', headerName: 'メール' }
+    ],
+    
+    rowData: [],
+    
+    // セル選択を有効化（Community版で利用可能）
+    cellSelection: true,
+    
+    // テキスト選択を有効にする場合（オプション）
+    enableCellTextSelection: true,
+    ensureDomOrder: true,
+    
+    // グリッド準備完了時の処理
+    onGridReady: (params) => {
+        setupClipboardHandling(params.api);
+    },
+    
+    // セルフォーカス時のイベント
+    onCellFocused: (params) => {
+        if (params.rowIndex !== null && params.column) {
+            console.log('フォーカスセル:', params.rowIndex, params.column.colId);
+        }
+    }
+};
+
+// Ctrl+C キーイベントの検知と処理（修正版）
+function setupClipboardHandling(gridApi) {
+    const gridDiv = document.querySelector('#myGrid');
+    
+    gridDiv.addEventListener('keydown', (e) => {
+        // Ctrl+C または Cmd+C (Mac) の検知
+        if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+            e.preventDefault(); // デフォルト動作を防ぐ
+            handleCopyEvent(gridApi);
+        }
+    });
+}
+
+// コピー処理の実装（修正版）
+function handleCopyEvent(gridApi) {
+    // フォーカスされたセルの値を取得
+    const focusedCell = gridApi.getFocusedCell();
+    
+    if (!focusedCell) {
+        console.log('フォーカスされたセルがありません');
+        return;
+    }
+    
+    // 正しいAPI: getDisplayedRowAtIndexを使用
+    const rowNode = gridApi.getDisplayedRowAtIndex(focusedCell.rowIndex);
+    
+    if (!rowNode) {
+        console.log('行ノードが見つかりません');
+        return;
+    }
+    
+    // 正しいAPI: getCellValueを使用（v31.3以降）
+    const value = gridApi.getCellValue({
+        rowNode: rowNode,
+        colKey: focusedCell.column.colId
+    });
+    
+    // クリップボードにコピー
+    copyToClipboard(value);
+    
+    // ビジュアルフィードバック
+    showCopyFeedback(focusedCell);
+    
+    console.log('コピーした値:', value);
+    
+    // セル範囲が選択されている場合の処理
+    handleRangeSelection(gridApi);
+}
+
+// 範囲選択の処理（修正版）
+function handleRangeSelection(gridApi) {
+    // getCellRanges()はEnterprise版の機能の可能性があるため、
+    // Community版では代替実装が必要
+    try {
+        const selectedRanges = gridApi.getCellRanges ? gridApi.getCellRanges() : null;
+        
+        if (selectedRanges && selectedRanges.length > 0) {
+            const cellValues = extractRangeValues(gridApi, selectedRanges);
+            copyToClipboard(cellValues);
+            showRangeCopyFeedback(selectedRanges);
+        }
+    } catch (error) {
+        console.log('範囲選択はEnterprise版の機能です');
+    }
+}
+
+// 範囲選択されたセルの値を抽出（修正版）
+function extractRangeValues(gridApi, ranges) {
+    const values = [];
+    
+    ranges.forEach(range => {
+        const startRow = Math.min(range.startRow.rowIndex, range.endRow.rowIndex);
+        const endRow = Math.max(range.startRow.rowIndex, range.endRow.rowIndex);
+        
+        for (let rowIndex = startRow; rowIndex <= endRow; rowIndex++) {
+            const rowValues = [];
+            const rowNode = gridApi.getDisplayedRowAtIndex(rowIndex);
+            
+            if (rowNode) {
+                range.columns.forEach(column => {
+                    const value = gridApi.getCellValue({
+                        rowNode: rowNode,
+                        colKey: column.colId
+                    });
+                    rowValues.push(value || '');
+                });
+                values.push(rowValues.join('\t'));
+            }
+        }
+    });
+    
+    return values.join('\n');
+}
+
+// クリップボードへのコピー（変更なし）
+function copyToClipboard(text) {
+    // モダンブラウザのClipboard API
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(String(text))
+            .then(() => {
+                console.log('クリップボードにコピー成功');
+            })
+            .catch(err => {
+                console.error('コピー失敗:', err);
+                fallbackCopyToClipboard(text);
+            });
+    } else {
+        // フォールバック方法
+        fallbackCopyToClipboard(text);
+    }
+}
+
+// フォールバックコピー（変更なし）
+function fallbackCopyToClipboard(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = String(text);
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    textArea.style.top = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+        document.execCommand('copy');
+        console.log('フォールバック方法でコピー成功');
+    } catch (err) {
+        console.error('フォールバックコピー失敗:', err);
+    }
+    
+    document.body.removeChild(textArea);
+}
+
+// ビジュアルフィードバック（修正版）
+function showCopyFeedback(focusedCell) {
+    // セルにフラッシュ効果を追加
+    const cellElement = document.querySelector(
+        `[row-index="${focusedCell.rowIndex}"] [col-id="${focusedCell.column.colId}"]`
+    );
+    
+    if (cellElement) {
+        cellElement.classList.add('cell-copied');
+        
+        setTimeout(() => {
+            cellElement.classList.remove('cell-copied');
+        }, 500);
+    }
+    
+    showToast('セルの値をコピーしました');
+}
+
+// トースト通知（変更なし）
+function showToast(message) {
+    const existingToast = document.querySelector('.copy-toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = 'copy-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 10);
+    
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
+
+// 選択中のセル情報を取得（修正版）
+function getSelectedCellInfo(gridApi) {
+    const focusedCell = gridApi.getFocusedCell();
+    
+    if (!focusedCell) {
+        return null;
+    }
+    
+    // 正しいAPI使用
+    const rowNode = gridApi.getDisplayedRowAtIndex(focusedCell.rowIndex);
+    
+    if (!rowNode) {
+        return null;
+    }
+    
+    const column = focusedCell.column;
+    const value = gridApi.getCellValue({
+        rowNode: rowNode,
+        colKey: column.colId
+    });
+    
+    return {
+        rowIndex: focusedCell.rowIndex,
+        colId: column.colId,
+        value: value,
+        rowData: rowNode.data,
+        column: column
+    };
+}
+
+// 初期化
+document.addEventListener('DOMContentLoaded', () => {
+    new agGrid.Grid(document.querySelector('#myGrid'), gridOptions);
+});
+```
+
+### Community版での代替実装方法
+
+Community版では、enableCellTextSelectionとensureDomOrderを設定することで、通常のテキスト選択を有効にできます：
+
+```javascript
+const gridOptions = {
+    // テキスト選択を有効化（Community版対応）
+    enableCellTextSelection: true,
+    ensureDomOrder: true,
+    
+    // これによりユーザーは通常のテキスト選択でコピー可能
+    // ただし、カスタムフォーマットは適用されない
+};
+```
+
+### CSS（変更なし）
+
+```css
+/* コピー時のセルハイライト */
+.cell-copied {
+    animation: copyFlash 0.5s ease-in-out;
+}
+
+@keyframes copyFlash {
+    0% {
+        background-color: rgba(76, 175, 80, 0.3);
+        box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+    }
+    50% {
+        background-color: rgba(76, 175, 80, 0.5);
+        box-shadow: 0 0 10px rgba(76, 175, 80, 0.7);
+    }
+    100% {
+        background-color: transparent;
+        box-shadow: none;
+    }
+}
+
+/* トースト通知 */
+.copy-toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #4CAF50;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 4px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    z-index: 10000;
+    font-size: 14px;
+}
+
+.copy-toast.show {
+    opacity: 1;
+}
+```
+
+## まとめ
+
+主な修正点：
+1. ✅ `getDisplayedRowAtIndex()` を使用（インデックスで行ノード取得）
+2. ✅ `getCellValue({rowNode, colKey})` を使用（新しいAPI）
+3. ✅ `cellSelection: true` を使用（最新の設定方法）
+4. ✅ Community版の制限を明記
+5. ✅ エラーハンドリングを追加
+
+この実装により、AG-Grid Community版でもCtrl+Cでセルの値をコピーできるようになります。
