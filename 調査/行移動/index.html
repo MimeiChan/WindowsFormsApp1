@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>AG Grid（Community）: 値+GroupIDで結合 & Excelライク編集 & グループ単位の上下移動</title>
+
+  <!-- AG Grid Community v34.x（CDN） -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@34.1.1/styles/ag-grid.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community@34.1.1/styles/ag-theme-quartz.css"/>
+
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #toolbar { padding: 10px 12px; font: 14px/1.6 system-ui, sans-serif; display: flex; gap: 8px; align-items: center; }
+    #myGrid { height: calc(100% - 62px); width: 100%; }
+    button { padding: 6px 10px; font: 14px/1 system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <button id="btnUp">▲ 上へ（グループ）</button>
+    <button id="btnDown">▼ 下へ（グループ）</button>
+    <span>※ ソート/フィルタ中は移動できません</span>
+  </div>
+
+  <div id="myGrid" class="ag-theme-quartz"></div>
+
+  <!-- AG Grid Community（グローバル変数 agGrid を提供） -->
+  <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@34.1.1/dist/ag-grid-community.min.js"></script>
+  <!-- アプリ本体 -->
+  <script src="./main.js"></script>
+</body>
+</html>
