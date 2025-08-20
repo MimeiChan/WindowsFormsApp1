@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AG-Grid 上下行追加</title>
+    
+    <!-- AG-Grid CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/31.0.1/styles/ag-grid.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/31.0.1/styles/ag-theme-alpine.css">
+    
+    <style>
+        body {
+            margin: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .button-container {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        #myGrid {
+            height: 500px;
+            width: 100%;
+        }
+        
+        .info {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AG-Grid 上下行追加機能デモ</h1>
+        
+        <div class="button-container">
+            <button id="addRowAbove" onclick="addRowAbove()">
+                ↑ 上に行追加
+            </button>
+            <button id="addRowBelow" onclick="addRowBelow()">
+                ↓ 下に行追加
+            </button>
+            <button onclick="deleteSelectedRow()">
+                選択行を削除
+            </button>
+        </div>
+        
+        <div id="myGrid" class="ag-theme-alpine"></div>
+        
+        <div class="info">
+            <strong>使い方：</strong>
+            <ul>
+                <li>セルをクリックして選択してください</li>
+                <li>「上に行追加」ボタンで選択セルの上に空行を追加</li>
+                <li>「下に行追加」ボタンで選択セルの下に空行を追加</li>
+                <li>「選択行を削除」ボタンで選択行を削除</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- AG-Grid JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/31.0.1/ag-grid-community.min.js"></script>
+    
+    <script>
+        // グリッドのオプション設定
+        let gridOptions;
+        let gridApi;
+        let nextId = 6; // 新規行のID管理用
+        
+        // 初期データ
+        const initialData = [
+            { id: 1, name: '田中太郎', age: 30, department: '営業部', email: 'tanaka@example.com' },
+            { id: 2, name: '佐藤花子', age: 25, department: '人事部', email: 'sato@example.com' },
+            { id: 3, name: '鈴木一郎', age: 35, department: '開発部', email: 'suzuki@example.com' },
+            { id: 4, name: '高橋美咲', age: 28, department: 'マーケティング部', email: 'takahashi@example.com' },
+            { id: 5, name: '伊藤健', age: 32, department: '経理部', email: 'ito@example.com' }
+        ];
+        
+        // カラム定義
+        const columnDefs = [
+            { 
+                field: 'id', 
+                headerName: 'ID', 
+                width: 80,
+                editable: false
+            },
+            { 
+                field: 'name', 
+                headerName: '名前',
+                editable: true
+            },
+            { 
+                field: 'age', 
+                headerName: '年齢',
+                width: 100,
+                editable: true
+            },
+            { 
+                field: 'department', 
+                headerName: '部署',
+                editable: true
+            },
+            { 
+                field: 'email', 
+                headerName: 'メールアドレス',
+                editable: true
+            }
+        ];
+        
+        // グリッドオプション
+        gridOptions = {
+            columnDefs: columnDefs,
+            rowData: initialData,
+            defaultColDef: {
+                sortable: true,
+                filter: true,
+                resizable: true,
+                width: 150
+            },
+            rowSelection: 'single',
+            animateRows: true,
+            onGridReady: function(params) {
+                gridApi = params.api;
+            }
+        };
+        
+        // 空行を作成する関数
+        function createEmptyRow() {
+            return {
+                id: nextId++,
+                name: '',
+                age: null,
+                department: '',
+                email: ''
+            };
+        }
+        
+        // 上に行を追加
+        function addRowAbove() {
+            const focusedCell = gridApi.getFocusedCell();
+            
+            if (!focusedCell) {
+                alert('セルを選択してください');
+                return;
+            }
+            
+            const rowIndex = focusedCell.rowIndex;
+            const newRow = createEmptyRow();
+            
+            // 現在のデータを取得
+            const rowData = [];
+            gridApi.forEachNode(node => {
+                rowData.push(node.data);
+            });
+            
+            // 指定位置に新しい行を挿入
+            rowData.splice(rowIndex, 0, newRow);
+            
+            // グリッドを更新
+            gridApi.setRowData(rowData);
+            
+            // 新しく追加した行のセルにフォーカス
+            setTimeout(() => {
+                gridApi.setFocusedCell(rowIndex, focusedCell.column.colId);
+            }, 100);
+        }
+        
+        // 下に行を追加
+        function addRowBelow() {
+            const focusedCell = gridApi.getFocusedCell();
+            
+            if (!focusedCell) {
+                alert('セルを選択してください');
+                return;
+            }
+            
+            const rowIndex = focusedCell.rowIndex;
+            const newRow = createEmptyRow();
+            
+            // 現在のデータを取得
+            const rowData = [];
+            gridApi.forEachNode(node => {
+                rowData.push(node.data);
+            });
+            
+            // 指定位置の次に新しい行を挿入
+            rowData.splice(rowIndex + 1, 0, newRow);
+            
+            // グリッドを更新
+            gridApi.setRowData(rowData);
+            
+            // 新しく追加した行のセルにフォーカス
+            setTimeout(() => {
+                gridApi.setFocusedCell(rowIndex + 1, focusedCell.column.colId);
+            }, 100);
+        }
+        
+        // 選択行を削除
+        function deleteSelectedRow() {
+            const selectedRows = gridApi.getSelectedRows();
+            
+            if (selectedRows.length === 0) {
+                const focusedCell = gridApi.getFocusedCell();
+                if (!focusedCell) {
+                    alert('削除する行を選択してください');
+                    return;
+                }
+                
+                // フォーカスされたセルの行を削除
+                const rowNode = gridApi.getDisplayedRowAtIndex(focusedCell.rowIndex);
+                if (rowNode) {
+                    const rowData = [];
+                    gridApi.forEachNode(node => {
+                        if (node.data.id !== rowNode.data.id) {
+                            rowData.push(node.data);
+                        }
+                    });
+                    gridApi.setRowData(rowData);
+                }
+            } else {
+                // 選択された行を削除
+                const rowData = [];
+                gridApi.forEachNode(node => {
+                    if (!selectedRows.includes(node.data)) {
+                        rowData.push(node.data);
+                    }
+                });
+                gridApi.setRowData(rowData);
+            }
+        }
+        
+        // DOMが読み込まれたらグリッドを初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            const gridDiv = document.querySelector('#myGrid');
+            new agGrid.Grid(gridDiv, gridOptions);
+        });
+    </script>
+</body>
+</html>
