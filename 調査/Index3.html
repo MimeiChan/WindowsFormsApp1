@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AG-Grid 高機能版</title>
+    
+    <!-- AG-Grid Community CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/31.0.1/styles/ag-grid.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/31.0.1/styles/ag-theme-alpine.css">
+    
+    <style>
+        body {
+            margin: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .button-container {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 14px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        button.load-btn {
+            background-color: #2196F3;
+        }
+        
+        button.load-btn:hover {
+            background-color: #1976D2;
+        }
+        
+        #myGrid {
+            height: 500px;
+            width: 100%;
+        }
+        
+        .info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .status-bar {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #333;
+            color: white;
+            border-radius: 5px;
+            font-family: monospace;
+            min-height: 20px;
+        }
+        
+        /* フラグ値1のセルのハイライト（カスタムクラス） */
+        .flag-highlight {
+            background-color: #ffeb3b !important;
+        }
+        
+        /* AG-Gridが自動的に付与するフォーカスクラスに対するスタイル */
+        /* フォーカスセルのハイライト（最優先） */
+        .ag-cell-focus {
+            background-color: #4CAF50 !important;
+            color: white !important;
+            outline: 2px solid #2E7D32 !important;
+        }
+        
+        /* フォーカスがある時でもフラグハイライトを表示したい場合は以下のように調整 */
+        .ag-cell.flag-highlight:not(.ag-cell-focus) {
+            background-color: #ffeb3b !important;
+        }
+        
+        /* コピー時の点滅アニメーション */
+        @keyframes copyFlash {
+            0% { background-color: #81C784 !important; }
+            25% { background-color: #4CAF50 !important; }
+            50% { background-color: #81C784 !important; }
+            75% { background-color: #4CAF50 !important; }
+            100% { background-color: #81C784 !important; }
+        }
+        
+        .copy-flash {
+            animation: copyFlash 0.6s ease-in-out !important;
+        }
+        
+        /* ペースト時の点滅アニメーション */
+        @keyframes pasteFlash {
+            0% { background-color: #64B5F6 !important; }
+            25% { background-color: #2196F3 !important; }
+            50% { background-color: #64B5F6 !important; }
+            75% { background-color: #2196F3 !important; }
+            100% { background-color: #64B5F6 !important; }
+        }
+        
+        .paste-flash {
+            animation: pasteFlash 0.6s ease-in-out !important;
+        }
+        
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .legend-box {
+            width: 20px;
+            height: 20px;
+            border: 1px solid #ccc;
+        }
+        
+        /* 編集モード時のスタイル調整 */
+        .ag-cell-inline-editing {
+            background-color: white !important;
+            color: black !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>AG-Grid 高機能版デモ</h1>
+        
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #ffeb3b;"></div>
+                <span>フラグ値1のセル</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background-color: #4CAF50; outline: 2px solid #2E7D32;"></div>
+                <span>フォーカス中のセル</span>
+            </div>
+        </div>
+        
+        <div class="button-container">
+            <button onclick="addRowAbove()">↑ 上に行追加</button>
+            <button onclick="addRowBelow()">↓ 下に行追加</button>
+            <button onclick="deleteSelectedRow()">選択行を削除</button>
+            <button class="load-btn" onclick="loadExternalData()">外部データ読込（フラグ付き）</button>
+            <button class="load-btn" onclick="toggleHighlightMode()">ハイライト切替</button>
+            <button onclick="clearAllHighlights()">ハイライトクリア</button>
+        </div>
+        
+        <div id="myGrid" class="ag-theme-alpine"></div>
+        
+        <div class="status-bar" id="statusBar">
+            Ready | Ctrl+C: コピー | Ctrl+V: ペースト
+        </div>
+        
+        <div class="info">
+            <strong>機能説明：</strong>
+            <ul>
+                <li><strong>セルハイライト:</strong> フラグ値が1のセルは黄色でハイライト表示</li>
+                <li><strong>フォーカスハイライト:</strong> 現在選択中のセルは緑色でハイライト（フラグ値より優先）</li>
+                <li><strong>コピー＆ペースト:</strong> Ctrl+C でコピー、Ctrl+V でペースト（セルが点滅）</li>
+                <li><strong>行の追加・削除:</strong> セルを選択して上下に行を追加、または削除</li>
+                <li><strong>外部データ読込:</strong> フラグ付きのJSONデータを読み込んでハイライト表示</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- AG-Grid Community JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/31.0.1/ag-grid-community.min.js"></script>
+    
+    <script>
+        // グローバル変数
+        let gridOptions;
+        let gridApi;
+        let nextId = 6;
+        let copiedCellData = null;
+        let copiedCellPosition = null;
+        let highlightEnabled = true;
+        
+        // 外部から送信されるJSONデータのサンプル
+        const externalJsonData = [
+            { id: 101, name: '山田太郎', nameFlag: 0, age: 45, ageFlag: 1, department: '経営企画部', departmentFlag: 0, email: 'yamada@example.com', emailFlag: 0 },
+            { id: 102, name: '木村花子', nameFlag: 1, age: 38, ageFlag: 0, department: '広報部', departmentFlag: 0, email: 'kimura@example.com', emailFlag: 1 },
+            { id: 103, name: '中村一郎', nameFlag: 0, age: 52, ageFlag: 0, department: '法務部', departmentFlag: 1, email: 'nakamura@example.com', emailFlag: 0 },
+            { id: 104, name: '小林美咲', nameFlag: 0, age: 29, ageFlag: 1, department: '研究開発部', departmentFlag: 0, email: 'kobayashi@example.com', emailFlag: 0 },
+            { id: 105, name: '加藤健', nameFlag: 1, age: 41, ageFlag: 0, department: '品質管理部', departmentFlag: 1, email: 'kato@example.com', emailFlag: 0 }
+        ];
+        
+        // 初期データ
+        const initialData = [
+            { id: 1, name: '田中太郎', nameFlag: 0, age: 30, ageFlag: 0, department: '営業部', departmentFlag: 0, email: 'tanaka@example.com', emailFlag: 0 },
+            { id: 2, name: '佐藤花子', nameFlag: 1, age: 25, ageFlag: 0, department: '人事部', departmentFlag: 0, email: 'sato@example.com', emailFlag: 0 },
+            { id: 3, name: '鈴木一郎', nameFlag: 0, age: 35, ageFlag: 1, department: '開発部', departmentFlag: 0, email: 'suzuki@example.com', emailFlag: 0 },
+            { id: 4, name: '高橋美咲', nameFlag: 0, age: 28, ageFlag: 0, department: 'マーケティング部', departmentFlag: 1, email: 'takahashi@example.com', emailFlag: 0 },
+            { id: 5, name: '伊藤健', nameFlag: 0, age: 32, ageFlag: 0, department: '経理部', departmentFlag: 0, email: 'ito@example.com', emailFlag: 1 }
+        ];
+        
+        // セルクラスを適用する関数（フラグベースのハイライト用）
+        function getCellClass(params) {
+            if (!highlightEnabled) return null;
+            
+            const fieldName = params.colDef.field;
+            const flagFieldName = fieldName + 'Flag';
+            
+            // フラグ値をチェック
+            if (params.data && params.data[flagFieldName] === 1) {
+                return 'flag-highlight';
+            }
+            
+            return null;
+        }
+        
+        // カラム定義
+        const columnDefs = [
+            { 
+                field: 'id', 
+                headerName: 'ID', 
+                width: 80,
+                editable: false
+            },
+            { 
+                field: 'name', 
+                headerName: '名前',
+                editable: true,
+                cellClass: getCellClass
+            },
+            { 
+                field: 'age', 
+                headerName: '年齢',
+                width: 100,
+                editable: true,
+                cellClass: getCellClass
+            },
+            { 
+                field: 'department', 
+                headerName: '部署',
+                editable: true,
+                cellClass: getCellClass
+            },
+            { 
+                field: 'email', 
+                headerName: 'メールアドレス',
+                editable: true,
+                cellClass: getCellClass
+            }
+        ];
+        
+        // グリッドオプション
+        gridOptions = {
+            columnDefs: columnDefs,
+            rowData: initialData,
+            defaultColDef: {
+                sortable: true,
+                filter: true,
+                resizable: true,
+                width: 200
+            },
+            rowSelection: 'single',
+            animateRows: true,
+            stopEditingWhenCellsLoseFocus: true,
+            onGridReady: function(params) {
+                gridApi = params.api;
+                setupKeyboardHandlers();
+            }
+        };
+        
+        // キーボードイベントの設定
+        function setupKeyboardHandlers() {
+            document.addEventListener('keydown', function(e) {
+                // Ctrl+C (コピー)
+                if (e.ctrlKey && e.key === 'c') {
+                    e.preventDefault();
+                    handleCopy();
+                }
+                // Ctrl+V (ペースト)
+                else if (e.ctrlKey && e.key === 'v') {
+                    e.preventDefault();
+                    handlePaste();
+                }
+            });
+        }
+        
+        // コピー処理
+        function handleCopy() {
+            const focusedCell = gridApi.getFocusedCell();
+            if (!focusedCell) {
+                updateStatus('コピー失敗: セルが選択されていません');
+                return;
+            }
+            
+            const rowNode = gridApi.getDisplayedRowAtIndex(focusedCell.rowIndex);
+            if (!rowNode) return;
+            
+            const columnId = focusedCell.column.colId;
+            copiedCellData = rowNode.data[columnId];
+            copiedCellPosition = {
+                rowIndex: focusedCell.rowIndex,
+                columnId: columnId
+            };
+            
+            // セルを点滅させる
+            const cellElement = document.querySelector(
+                `[row-index="${focusedCell.rowIndex}"] [col-id="${columnId}"]`
+            );
+            if (cellElement) {
+                cellElement.classList.add('copy-flash');
+                setTimeout(() => {
+                    cellElement.classList.remove('copy-flash');
+                }, 600);
+            }
+            
+            updateStatus(`コピー完了: "${copiedCellData}"`);
+        }
+        
+        // ペースト処理
+        function handlePaste() {
+            if (copiedCellData === null) {
+                updateStatus('ペースト失敗: コピーされたデータがありません');
+                return;
+            }
+            
+            const focusedCell = gridApi.getFocusedCell();
+            if (!focusedCell) {
+                updateStatus('ペースト失敗: セルが選択されていません');
+                return;
+            }
+            
+            const rowNode = gridApi.getDisplayedRowAtIndex(focusedCell.rowIndex);
+            if (!rowNode) return;
+            
+            const columnId = focusedCell.column.colId;
+            
+            // データを更新
+            rowNode.setDataValue(columnId, copiedCellData);
+            
+            // セルを点滅させる
+            const cellElement = document.querySelector(
+                `[row-index="${focusedCell.rowIndex}"] [col-id="${columnId}"]`
+            );
+            if (cellElement) {
+                cellElement.classList.add('paste-flash');
+                setTimeout(() => {
+                    cellElement.classList.remove('paste-flash');
+                }, 600);
+            }
+            
+            updateStatus(`ペースト完了: "${copiedCellData}"`);
+        }
+        
+        // ステータスバー更新
+        function updateStatus(message) {
+            const statusBar = document.getElementById('statusBar');
+            statusBar.textContent = message;
+            setTimeout(() => {
+                statusBar.textContent = 'Ready | Ctrl+C: コピー | Ctrl+V: ペースト';
+            }, 3000);
+        }
+        
+        // 外部データを読み込む
+        function loadExternalData() {
+            gridApi.setRowData(externalJsonData);
+            updateStatus('外部データを読み込みました（フラグ付き）');
+            nextId = 106; // IDカウンターを更新
+        }
+        
+        // ハイライトモードの切り替え
+        function toggleHighlightMode() {
+            highlightEnabled = !highlightEnabled;
+            gridApi.refreshCells({ force: true });
+            updateStatus(highlightEnabled ? 'ハイライト表示: ON' : 'ハイライト表示: OFF');
+        }
+        
+        // すべてのハイライトをクリア
+        function clearAllHighlights() {
+            const rowData = [];
+            gridApi.forEachNode(node => {
+                const data = { ...node.data };
+                // すべてのフラグを0にリセット
+                Object.keys(data).forEach(key => {
+                    if (key.endsWith('Flag')) {
+                        data[key] = 0;
+                    }
+                });
+                rowData.push(data);
+            });
+            gridApi.setRowData(rowData);
+            updateStatus('すべてのハイライトをクリアしました');
+        }
+        
+        // 空行を作成する関数
+        function createEmptyRow() {
+            return {
+                id: nextId++,
+                name: '',
+                nameFlag: 0,
+                age: null,
+                ageFlag: 0,
+                department: '',
+                departmentFlag: 0,
+                email: '',
+                emailFlag: 0
+            };
+        }
+        
+        // 上に行を追加
+        function addRowAbove() {
+            const focusedCell = gridApi.getFocusedCell();
+            
+            if (!focusedCell) {
+                updateStatus('エラー: セルを選択してください');
+                return;
+            }
+            
+            const rowIndex = focusedCell.rowIndex;
+            const newRow = createEmptyRow();
+            
+            const rowData = [];
+            gridApi.forEachNode(node => {
+                rowData.push(node.data);
+            });
+            
+            rowData.splice(rowIndex, 0, newRow);
+            gridApi.setRowData(rowData);
+            
+            setTimeout(() => {
+                gridApi.setFocusedCell(rowIndex, focusedCell.column.colId);
+            }, 100);
+            
+            updateStatus('上に行を追加しました');
+        }
+        
+        // 下に行を追加
+        function addRowBelow() {
+            const focusedCell = gridApi.getFocusedCell();
+            
+            if (!focusedCell) {
+                updateStatus('エラー: セルを選択してください');
+                return;
+            }
+            
+            const rowIndex = focusedCell.rowIndex;
+            const newRow = createEmptyRow();
+            
+            const rowData = [];
+            gridApi.forEachNode(node => {
+                rowData.push(node.data);
+            });
+            
+            rowData.splice(rowIndex + 1, 0, newRow);
+            gridApi.setRowData(rowData);
+            
+            setTimeout(() => {
+                gridApi.setFocusedCell(rowIndex + 1, focusedCell.column.colId);
+            }, 100);
+            
+            updateStatus('下に行を追加しました');
+        }
+        
+        // 選択行を削除
+        function deleteSelectedRow() {
+            const selectedRows = gridApi.getSelectedRows();
+            
+            if (selectedRows.length === 0) {
+                const focusedCell = gridApi.getFocusedCell();
+                if (!focusedCell) {
+                    updateStatus('エラー: 削除する行を選択してください');
+                    return;
+                }
+                
+                const rowNode = gridApi.getDisplayedRowAtIndex(focusedCell.rowIndex);
+                if (rowNode) {
+                    const rowData = [];
+                    gridApi.forEachNode(node => {
+                        if (node.data.id !== rowNode.data.id) {
+                            rowData.push(node.data);
+                        }
+                    });
+                    gridApi.setRowData(rowData);
+                    updateStatus('行を削除しました');
+                }
+            } else {
+                const rowData = [];
+                gridApi.forEachNode(node => {
+                    if (!selectedRows.includes(node.data)) {
+                        rowData.push(node.data);
+                    }
+                });
+                gridApi.setRowData(rowData);
+                updateStatus('選択行を削除しました');
+            }
+        }
+        
+        // DOMが読み込まれたらグリッドを初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            const gridDiv = document.querySelector('#myGrid');
+            new agGrid.Grid(gridDiv, gridOptions);
+        });
+    </script>
+</body>
+</html>
