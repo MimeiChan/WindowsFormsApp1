@@ -1,0 +1,449 @@
+## 設計書
+
+### **1. システム概要*
+### **2. アーキテクチャ構成**
+
+```
+┌─────────────────────────────────────────┐
+│  Presentation Layer (Windows Forms)     │
+│  - Forms / Strategies / Commands        │
+├─────────────────────────────────────────┤
+│  Application Layer                      │
+│  - Presenters / State Management        │
+├─────────────────────────────────────────┤
+│  Domain Layer                           │
+│  - Services / Business Logic            │
+├─────────────────────────────────────────┤
+│  Infrastructure Layer                   │
+│  - Repositories / Data Access           │
+└─────────────────────────────────────────┘
+```
+
+### **3. 主要な設計パターン**
+
+- **Template Method パターン**: 画面の共通処理を基底クラスに集約
+- **Strategy パターン**: 画面モードごとの振る舞いを切り替え
+- **State パターン**: 作業状態の管理と遷移制御
+- **Command パターン**: 操作の実行と取り消しを管理
+- **MVP パターン**: View-Presenter-Model の分離
+- **Poor Man's DI**: コンストラクタインジェクションによる依存性注入
+
+### **4. クラス構成と責務**
+
+#### **4.1 Forms層（View）**
+
+| クラス | 責務 |
+|--------|------|
+| **BaseDataGridForm** | DataGridView共通設定、UIレイアウト、テンプレートメソッド提供 |
+| **InputForm** | 新規データ入力画面、保留機能付き |
+| **CheckForm** | データチェック画面、問題なし/あり判定、保留機能付き |
+| **ReInputForm** | 再入力画面、差分表示、保留機能付き |
+| **ViewForm** | 閲覧専用画面、エクスポート機能 |
+
+#### **4.2 Strategies層**
+
+| クラス | 責務 |
+|--------|------|
+| **IFormStrategy** | 画面モード制御のインターフェース |
+| **InputFormStrategy** | 編集可能、登録・保留ボタン表示 |
+| **CheckFormStrategy** | 読取専用、チェックボタン・保留ボタン表示 |
+| **ReInputFormStrategy** | 編集可能、差分ハイライト、保留ボタン表示 |
+| **ViewFormStrategy** | 完全読取専用、操作ボタン非表示 |
+
+#### **4.3 Commands層**
+
+| クラス | 責務 |
+|--------|------|
+| **ICommand** | コマンド実行のインターフェース |
+| **SaveCommand** | データ保存と状態遷移 |
+| **SuspendCommand** | 作業保留処理 |
+| **ResumeCommand** | 保留復帰処理 |
+| **CheckOKCommand** | チェックOK判定 |
+| **CheckNGCommand** | チェックNG判定 |
+
+#### **4.4 States層**
+
+| クラス | 責務 |
+|--------|------|
+| **IWorkState** | 状態管理のインターフェース |
+| **InitialInputState** | 初回入力中 |
+| **SuspendedInputState** | 入力保留中 |
+| **WaitingCheckState** | チェック待ち |
+| **CheckingState** | チェック中 |
+| **SuspendedCheckState** | チェック保留中 |
+| **RejectedState** | 問題あり（再入力必要） |
+| **ReInputtingState** | 再入力中 |
+| **SuspendedReInputState** | 再入力保留中 |
+| **CompletedState** | 完了 |
+
+#### **4.5 Presenters層**
+
+| クラス | 責務 |
+|--------|------|
+| **BasePresenter** | 共通処理、Command実行管理、エラーハンドリング |
+| **InputPresenter** | 入力処理、データ取得、保留管理 |
+| **CheckPresenter** | チェック処理、判定結果保存 |
+| **ReInputPresenter** | 再入力処理、差分管理 |
+| **ViewPresenter** | 閲覧処理、エクスポート |
+
+#### **4.6 Services層**
+
+| クラス | 責務 |
+|--------|------|
+| **IDataService** | データCRUD操作 |
+| **IValidationService** | ビジネスルール検証 |
+| **IStatusService** | 作業ステータス管理 |
+| **ISuspendService** | 保留データ管理 |
+| **IStateTransitionService** | 状態遷移制御 |
+
+#### **4.7 Models層**
+
+| クラス | 責務 |
+|--------|------|
+| **SecurityReportData** | 有価証券報告書データエンティティ |
+| **WorkStatus** | 作業状態エンティティ |
+| **SuspendedData** | 保留データエンティティ |
+| **StateContext** | 状態コンテキスト管理 |
+
+### **5. 依存性注入（DI）の実装方針**
+
+#### **Composition Root（Program.cs or Bootstrapper）**
+
+```
+責務：
+- 全依存関係の構築
+- オブジェクトグラフの組み立て
+- ライフサイクル管理
+
+構成要素：
+- ServiceFactory: サービス層のインスタンス生成
+- PresenterFactory: Presenter層のインスタンス生成  
+- StrategyFactory: Strategy層のインスタンス生成
+- CommandFactory: Command層のインスタンス生成
+- FormFactory: 最終的なForm生成と依存関係注入
+```
+
+### **6. 保留機能の実装方針**
+
+#### **保留時の処理フロー**
+1. 現在の入力データをスナップショット保存
+2. 保留フラグを有効化
+3. 作業状態を「保留中」に遷移
+4. 保留理由と日時を記録
+
+#### **復帰時の処理フロー**
+1. 保留データを取得
+2. グリッドにデータ復元
+3. 前回の作業状態を復元
+4. 編集を継続可能にする
+
+#### **保留後の完了処理**
+1. 通常の保存処理を実行
+2. 保留フラグをクリア
+3. 次の正規状態へ遷移
+4. 保留データを削除
+
+### **7. データフロー**
+
+#### **基本的な処理の流れ**
+```
+User Action → Form → Strategy（UI制御判定）
+                ↓
+            Presenter → Command（操作実行）
+                ↓
+            Services → State（状態遷移）
+                ↓
+            Repository → Database
+```
+
+### **8. 状態遷移図（Mermaid）**### **9. 操作シーケンス例（入力画面での保留）**### **10. クラス依存関係図**### **11. 設計の利点**
+
+#### **保守性**
+- 各クラスが単一責任原則に従い、変更の影響範囲が限定的
+- 状態管理とビジネスロジックが分離され、テストが容易
+
+#### **拡張性**
+- 新しい画面モードはStrategyの追加で対応可能
+- 新しい状態はStateクラスの追加で対応可能
+- 新しい操作はCommandの追加で対応可能
+
+#### **再利用性**
+- BaseDataGridFormにより共通機能を集約
+- サービス層の再利用が可能
+- Commandパターンにより操作の組み合わせが柔軟
+
+#### **テスタビリティ**
+- インターフェースベースの設計によりモックが容易
+- PresenterとViewの分離によりUIテストが不要
+- 状態遷移のテストが独立して実施可能
+
+### **12. 今後の拡張ポイント**
+
+1. **バッチ処理対応**: 複数データの一括処理Command追加
+2. **履歴管理**: Mementoパターンによる操作履歴
+3. **通知機能**: Observerパターンによる状態変更通知
+4. **権限管理**: Decoratorパターンによる権限チェック層追加
+5. **ワークフロー分岐**: より複雑な承認フローへの対応
+
+この設計により、保留機能を含む複雑な業務要件に対して、柔軟かつ保守性の高いシステムを構築できます。
+stateDiagram-v2
+    [*] --> 初回入力中: 新規作業開始
+    
+    初回入力中 --> 入力保留中: 保留
+    初回入力中 --> チェック待ち: 登録
+    
+    入力保留中 --> 初回入力中: 復帰
+    入力保留中 --> チェック待ち: 復帰→登録
+    
+    チェック待ち --> チェック中: チェック開始
+    
+    チェック中 --> チェック保留中: 保留
+    チェック中 --> 完了: 問題なし
+    チェック中 --> 問題あり: 問題あり
+    
+    チェック保留中 --> チェック中: 復帰
+    チェック保留中 --> 完了: 復帰→問題なし
+    チェック保留中 --> 問題あり: 復帰→問題あり
+    
+    問題あり --> 再入力中: 修正開始
+    
+    再入力中 --> 再入力保留中: 保留
+    再入力中 --> チェック待ち: 修正完了
+    
+    再入力保留中 --> 再入力中: 復帰
+    再入力保留中 --> チェック待ち: 復帰→登録
+    
+    完了 --> [*]: 作業完了
+    
+    note left of 入力保留中
+        保留データはDBに保存
+        保留フラグ=true
+    end note
+    
+    note right of チェック保留中
+        チェック途中結果を保持
+        部分的な判定を記録
+    end note
+    
+    note right of 再入力保留中
+        修正途中データを保存
+        差分情報も保持
+    end note
+
+
+
+sequenceDiagram
+    participant User as ユーザー
+    participant Form as InputForm
+    participant Strategy as InputFormStrategy
+    participant Presenter as InputPresenter
+    participant Command as SuspendCommand
+    participant SuspendSvc as ISuspendService
+    participant StateSvc as IStateTransitionService
+    participant DB as Database
+    
+    User->>Form: 保留ボタン押下
+    Form->>Strategy: CanSuspend()確認
+    Strategy-->>Form: true
+    
+    Form->>Presenter: HandleSuspend()
+    Presenter->>Command: new SuspendCommand()
+    Presenter->>Command: Execute()
+    
+    Command->>SuspendSvc: SuspendWork(data)
+    SuspendSvc->>DB: 保留データ保存
+    DB-->>SuspendSvc: 保存完了
+    
+    Command->>StateSvc: Transition(SuspendedInputState)
+    StateSvc->>DB: ステータス更新
+    DB-->>StateSvc: 更新完了
+    
+    StateSvc-->>Command: 遷移完了
+    Command-->>Presenter: 保留完了
+    Presenter-->>Form: UI更新
+    Form-->>User: 保留完了通知
+    
+    note over User,DB: 後日、保留データを復帰
+    
+    User->>Form: 保留データ選択
+    Form->>Presenter: HandleResume(id)
+    Presenter->>Command: new ResumeCommand()
+    Presenter->>Command: Execute()
+    
+    Command->>SuspendSvc: ResumeWork(id)
+    SuspendSvc->>DB: 保留データ取得
+    DB-->>SuspendSvc: データ返却
+    
+    SuspendSvc-->>Command: 復帰データ
+    Command-->>Presenter: データ復元
+    Presenter->>Form: グリッド更新
+    Form-->>User: 編集再開可能
+
+
+
+
+
+
+
+classDiagram
+    class BaseDataGridForm {
+        <<abstract>>
+        #DataGridView grid
+        #IFormStrategy strategy
+        #BasePresenter presenter
+        +Initialize()
+        +ConfigureGrid()
+        #OnSaveClick()
+        #OnSuspendClick()
+    }
+    
+    class InputForm {
+        +InputForm(presenter, strategy)
+        +LoadData()
+        +EnableEditing()
+    }
+    
+    class IFormStrategy {
+        <<interface>>
+        +ConfigureGrid()
+        +ConfigureButtons()
+        +CanEdit() bool
+        +CanSuspend() bool
+    }
+    
+    class InputFormStrategy {
+        -IWorkState state
+        +ConfigureGrid()
+        +ConfigureButtons()
+        +HandleSuspendedData()
+    }
+    
+    class BasePresenter {
+        <<abstract>>
+        #IDataService dataService
+        #IValidationService validationService
+        #IStatusService statusService
+        #ISuspendService suspendService
+        #IStateTransitionService stateService
+        +ExecuteCommand(ICommand)
+        +HandleSuspend()
+        +HandleResume()
+    }
+    
+    class InputPresenter {
+        +SaveData()
+        +ValidateInput()
+        +LoadFromDocument()
+    }
+    
+    class ICommand {
+        <<interface>>
+        +Execute()
+        +CanExecute() bool
+    }
+    
+    class SuspendCommand {
+        -ISuspendService suspendService
+        -IStateTransitionService stateService
+        +Execute()
+        +CanExecute() bool
+    }
+    
+    class ISuspendService {
+        <<interface>>
+        +SuspendWork(data)
+        +ResumeWork(id)
+        +GetSuspendedData(id)
+    }
+    
+    class IWorkState {
+        <<interface>>
+        +CanSave() bool
+        +CanSuspend() bool
+        +GetNextState() IWorkState
+        +GetSuspendState() IWorkState
+    }
+    
+    class InitialInputState {
+        +CanSave() bool
+        +CanSuspend() bool
+        +GetNextState() IWorkState
+    }
+    
+    class SecurityReportData {
+        +CompanyInfo
+        +FinancialData
+        +ReportDate
+        +Version
+        +Validate()
+    }
+    
+    class WorkStatus {
+        +CurrentState
+        +PreviousState
+        +LastModified
+        +ModifiedBy
+        +IsSuspended
+    }
+    
+    class SuspendedData {
+        +DataSnapshot
+        +SuspendedAt
+        +SuspendedBy
+        +SuspendReason
+        +OriginalState
+    }
+    
+    BaseDataGridForm <|-- InputForm
+    BaseDataGridForm o-- IFormStrategy
+    BaseDataGridForm o-- BasePresenter
+    
+    IFormStrategy <|.. InputFormStrategy
+    InputFormStrategy o-- IWorkState
+    
+    BasePresenter <|-- InputPresenter
+    BasePresenter o-- ISuspendService
+    BasePresenter o-- ICommand
+    
+    ICommand <|.. SuspendCommand
+    SuspendCommand o-- ISuspendService
+    
+    IWorkState <|.. InitialInputState
+    
+    InputPresenter --> SecurityReportData
+    ISuspendService --> SuspendedData
+    BasePresenter --> WorkStatus
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
